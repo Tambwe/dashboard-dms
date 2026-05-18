@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagnostic Scanner Thales</title>
+    <style>
+        :root {
+            --bg: #f4efe6;
+            --ink: #1d2a33;
+            --panel: #fffdf8;
+            --line: #d8cbb8;
+            --accent: #0f766e;
+            --accent-2: #b45309;
+            --good: #166534;
+            --warn: #b45309;
+            --bad: #b91c1c;
+            --muted: #6b7280;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, sans-serif;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at top left, rgba(15, 118, 110, 0.10), transparent 28%),
+                radial-gradient(circle at right, rgba(180, 83, 9, 0.12), transparent 22%),
+                linear-gradient(180deg, #f8f3eb 0%, var(--bg) 100%);
+        }
+
+        .shell {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 28px 20px 40px;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, rgba(15, 118, 110, 0.95), rgba(30, 41, 59, 0.94));
+            color: #f8fafc;
+            border-radius: 24px;
+            padding: 28px;
+            box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18);
+            margin-bottom: 22px;
+        }
+
+        .hero h1 {
+            margin: 0 0 8px;
+            font-size: clamp(1.9rem, 3vw, 3rem);
+            line-height: 1.05;
+        }
+
+        .hero p { margin: 0; max-width: 72ch; color: rgba(248, 250, 252, 0.86); }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 340px 1fr;
+            gap: 20px;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            padding: 18px;
+            box-shadow: 0 14px 34px rgba(100, 116, 139, 0.08);
+        }
+
+        .panel h2 {
+            margin: 0 0 14px;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+        }
+
+        .stack { display: grid; gap: 14px; }
+
+        label {
+            display: block;
+            font-size: 0.84rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: #374151;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 10px 12px;
+            font: inherit;
+            background: #fff;
+        }
+
+        textarea {
+            min-height: 160px;
+            resize: vertical;
+            font-family: Consolas, monospace;
+            font-size: 0.9rem;
+        }
+
+        .actions, .pose-actions {
+            display: grid;
+            gap: 10px;
+        }
+
+        button {
+            border: 0;
+            border-radius: 12px;
+            padding: 11px 14px;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 120ms ease, opacity 120ms ease, background 120ms ease;
+        }
+
+        button:hover { transform: translateY(-1px); }
+        button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+        .primary { background: var(--accent); color: #fff; }
+        .secondary { background: #e2e8f0; color: #0f172a; }
+        .warning { background: #f59e0b; color: #fff; }
+        .danger { background: #dc2626; color: #fff; }
+
+        .badge-row, .summary-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        .metric {
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 14px;
+        }
+
+        .metric small { display: block; color: var(--muted); margin-bottom: 6px; }
+        .metric strong { font-size: 1.4rem; }
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: #fff;
+            border: 1px solid #e5e7eb;
+        }
+
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #94a3b8;
+            box-shadow: 0 0 0 6px rgba(148, 163, 184, 0.14);
+        }
+
+        .dot.ok { background: #22c55e; box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.16); }
+        .dot.warn { background: #f59e0b; box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.16); }
+        .dot.bad { background: #ef4444; box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.16); }
+
+        .results {
+            display: grid;
+            gap: 12px;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        }
+
+        .finger-card {
+            border: 1px solid #dbe4ef;
+            background: #fff;
+            border-radius: 18px;
+            overflow: hidden;
+        }
+
+        .finger-card header {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 12px 14px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .finger-card header strong { font-size: 0.95rem; }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+
+        .pill.good { background: rgba(22, 101, 52, 0.12); color: var(--good); }
+        .pill.warn { background: rgba(180, 83, 9, 0.14); color: var(--warn); }
+        .pill.bad { background: rgba(185, 28, 28, 0.12); color: var(--bad); }
+
+        .finger-card .body { padding: 14px; display: grid; gap: 12px; }
+
+        .kv {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 6px 12px;
+            font-size: 0.9rem;
+        }
+
+        .kv span:nth-child(odd) { color: var(--muted); }
+        .preview {
+            min-height: 150px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(180deg, #f8fafc, #eef2f7);
+            border: 1px dashed #cbd5e1;
+            border-radius: 14px;
+            overflow: hidden;
+        }
+
+        .preview img { width: 100%; height: auto; display: block; }
+
+        .log {
+            min-height: 180px;
+            max-height: 280px;
+            overflow: auto;
+            background: #161b22;
+            color: #d1d5db;
+            border-radius: 16px;
+            padding: 14px;
+            font-family: Consolas, monospace;
+            font-size: 0.86rem;
+            white-space: pre-wrap;
+        }
+
+        .help {
+            border-left: 5px solid var(--accent-2);
+            padding: 14px 16px;
+            background: rgba(251, 191, 36, 0.12);
+            border-radius: 14px;
+            font-size: 0.94rem;
+        }
+
+        @media (max-width: 960px) {
+            .grid { grid-template-columns: 1fr; }
+            .badge-row, .summary-row { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <section class="hero">
+            <h1>Diagnostic WebAPI Thales</h1>
+            <p>Outil local pour vérifier le service WebAPI, sélectionner le capteur DactyScan84c, capturer les poses biométriques et afficher, doigt par doigt, l'image, le template et l'erreur exacte fournie par le SDK.</p>
+        </section>
+
+        <div class="grid">
+            <aside class="stack">
+                <section class="panel">
+                    <h2>Connexion</h2>
+                    <div class="stack">
+                        <div>
+                            <label for="apiBase">Base URL WebAPI</label>
+                            <input id="apiBase" type="text" value="http://localhost:8090">
+                        </div>
+                        <div>
+                            <label for="captureTimeout">Timeout capture</label>
+                            <input id="captureTimeout" type="number" value="20" min="5" max="90">
+                        </div>
+                        <div class="status">
+                            <span id="healthDot" class="dot"></span>
+                            <span id="healthText">Service non testé</span>
+                        </div>
+                        <div class="actions">
+                            <button class="primary" id="btnHealth">Tester le service</button>
+                            <button class="secondary" id="btnDevices">Lister les devices</button>
+                            <button class="secondary" id="btnActivate" disabled>Activer le scanner</button>
+                            <button class="warning" id="btnRunAll" disabled>Diagnostic complet des 3 poses</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="panel">
+                    <h2>Poses</h2>
+                    <div class="pose-actions">
+                        <button class="secondary pose-btn" data-pose="1" disabled>Pose 1 · Main gauche 4 doigts</button>
+                        <button class="secondary pose-btn" data-pose="2" disabled>Pose 2 · Deux pouces</button>
+                        <button class="secondary pose-btn" data-pose="3" disabled>Pose 3 · Main droite 4 doigts</button>
+                    </div>
+                </section>
+
+                <section class="panel">
+                    <h2>Device</h2>
+                    <textarea id="deviceDump" readonly>Aucun device chargé.</textarea>
+                </section>
+
+                <section class="panel">
+                    <h2>Aide opérateur</h2>
+                    <div class="help">
+                        Si le SDK retourne "Low quality fingerprint (Image) (GBFRSW_Coding)", cela signifie que l'image a bien été capturée mais que le moteur n'a pas pu générer un template fiable. Nettoyez la vitre, repositionnez la main et maintenez les doigts à plat pendant toute la capture.
+                    </div>
+                </section>
+            </aside>
+
+            <main class="stack">
+                <section class="panel">
+                    <h2>Résumé</h2>
+                    <div class="summary-row">
+                        <div class="metric"><small>Device sélectionné</small><strong id="summaryDevice">Aucun</strong></div>
+                        <div class="metric"><small>Pose en cours</small><strong id="summaryPose">Aucune</strong></div>
+                        <div class="metric"><small>Dernière erreur</small><strong id="summaryError">Aucune</strong></div>
+                    </div>
+                </section>
+
+                <section class="panel">
+                    <h2>Résultats de capture</h2>
+                    <div class="badge-row" id="poseSummary">
+                        <div class="metric"><small>Pose 1</small><strong id="pose1Stat">Non testée</strong></div>
+                        <div class="metric"><small>Pose 2</small><strong id="pose2Stat">Non testée</strong></div>
+                        <div class="metric"><small>Pose 3</small><strong id="pose3Stat">Non testée</strong></div>
+                    </div>
+                    <div style="height: 14px"></div>
+                    <div id="results" class="results"></div>
+                </section>
+
+                <section class="panel">
+                    <h2>Journal</h2>
+                    <div id="log" class="log">En attente.</div>
+                </section>
+
+                <section class="panel">
+                    <h2>JSON brut</h2>
+                    <textarea id="rawJson" readonly>Pas encore de capture.</textarea>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        const OBJECT_IDS = {
+            1: { id: 22, label: 'Main gauche 4 doigts' },
+            2: { id: 21, label: 'Deux pouces' },
+            3: { id: 23, label: 'Main droite 4 doigts' },
+        };
+
+        let selectedDevice = null;
+        let busy = false;
+
+        function apiBase() {
+            return document.getElementById('apiBase').value.replace(/\/$/, '');
+        }
+
+        function log(message, level = 'info') {
+            const now = new Date().toLocaleTimeString();
+            const prefix = {
+                info: '[INFO]',
+                ok: '[OK]',
+                warn: '[WARN]',
+                error: '[ERR]'
+            }[level] || '[INFO]';
+            const el = document.getElementById('log');
+            el.textContent += `\n${now} ${prefix} ${message}`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function setHealth(state, text) {
+            const dot = document.getElementById('healthDot');
+            dot.className = 'dot ' + (state === 'ok' ? 'ok' : state === 'warn' ? 'warn' : state === 'bad' ? 'bad' : '');
+            document.getElementById('healthText').textContent = text;
+        }
+
+        function setBusy(nextBusy) {
+            busy = nextBusy;
+            document.querySelectorAll('button').forEach(function (button) {
+                if (button.dataset.pose) {
+                    button.disabled = nextBusy || !selectedDevice;
+                }
+            });
+            document.getElementById('btnActivate').disabled = nextBusy || !selectedDevice;
+            document.getElementById('btnRunAll').disabled = nextBusy || !selectedDevice;
+            document.getElementById('btnHealth').disabled = nextBusy;
+            document.getElementById('btnDevices').disabled = nextBusy;
+        }
+
+        async function apiRequest(method, path, expectJson = true) {
+            const response = await fetch(apiBase() + path, {
+                method: method,
+                headers: { Accept: 'application/json' }
+            });
+
+            if (!response.ok) {
+                const body = await response.text();
+                throw new Error(`HTTP ${response.status} - ${body || response.statusText}`);
+            }
+
+            if (!expectJson) return null;
+            return await response.json();
+        }
+
+        async function healthCheck() {
+            setBusy(true);
+            try {
+                await apiRequest('GET', '/v2/api-docs');
+                setHealth('ok', 'WebAPI disponible');
+                log('Le service WebAPI répond sur ' + apiBase(), 'ok');
+            } catch (error) {
+                setHealth('bad', 'WebAPI indisponible');
+                log(error.message, 'error');
+                throw error;
+            } finally {
+                setBusy(false);
+            }
+        }
+
+        async function loadDevices() {
+            setBusy(true);
+            try {
+                const devices = await apiRequest('GET', '/devices');
+                document.getElementById('deviceDump').value = JSON.stringify(devices, null, 2);
+                if (Array.isArray(devices) && devices.length > 0) {
+                    selectedDevice = devices[0];
+                    document.getElementById('summaryDevice').textContent = selectedDevice.DeviceName + ' · ' + selectedDevice.SerialNumber;
+                    log('Device trouvé: ' + selectedDevice.DeviceName + ' (' + selectedDevice.SerialNumber + ')', 'ok');
+                } else {
+                    selectedDevice = null;
+                    document.getElementById('summaryDevice').textContent = 'Aucun';
+                    log('Aucun scanner détecté', 'warn');
+                }
+            } catch (error) {
+                selectedDevice = null;
+                document.getElementById('summaryDevice').textContent = 'Aucun';
+                document.getElementById('summaryError').textContent = 'Devices KO';
+                log(error.message, 'error');
+                throw error;
+            } finally {
+                setBusy(false);
+            }
+        }
+
+        async function activateDevice() {
+            if (!selectedDevice) {
+                log('Aucun scanner à activer.', 'warn');
+                return;
+            }
+
+            setBusy(true);
+            try {
+                await apiRequest('PUT', '/devices/' + encodeURIComponent(selectedDevice.SerialNumber), false);
+                log('Scanner activé: ' + selectedDevice.SerialNumber, 'ok');
+            } catch (error) {
+                document.getElementById('summaryError').textContent = 'Activation KO';
+                log(error.message, 'error');
+                throw error;
+            } finally {
+                setBusy(false);
+            }
+        }
+
+        function summarizePose(pose, fingers) {
+            const withImage = fingers.filter(function (finger) { return !!finger.imageBase64; }).length;
+            const withTemplate = fingers.filter(function (finger) { return !!finger.templateBase64; }).length;
+            const withError = fingers.filter(function (finger) { return !!finger.sdkError; }).length;
+            document.getElementById('pose' + pose + 'Stat').textContent = `${withTemplate}/${fingers.length} template(s), ${withImage}/${fingers.length} image(s), ${withError} erreur(s)`;
+        }
+
+        function renderResults(pose, fingers) {
+            const container = document.getElementById('results');
+            const cards = fingers.map(function (finger) {
+                const state = finger.templateBase64 ? 'good' : (finger.imageBase64 ? 'warn' : 'bad');
+                const stateText = finger.templateBase64 ? 'Template OK' : (finger.imageBase64 ? 'Image seule' : 'Echec');
+                const imageHtml = finger.imageBase64
+                    ? `<img src="data:image/jpeg;base64,${finger.imageBase64}" alt="${finger.objectName}">`
+                    : '<span>Aucune image</span>';
+                const templateSize = finger.templateBase64 ? Math.round((finger.templateBase64.length * 3) / 4) : 0;
+                return `
+                    <article class="finger-card">
+                        <header>
+                            <strong>Pose ${pose} · ${finger.objectName}</strong>
+                            <span class="pill ${state}">${stateText}</span>
+                        </header>
+                        <div class="body">
+                            <div class="preview">${imageHtml}</div>
+                            <div class="kv">
+                                <span>Image</span><span>${finger.imageBase64 ? 'Oui' : 'Non'}</span>
+                                <span>Template</span><span>${finger.templateBase64 ? 'Oui' : 'Non'}</span>
+                                <span>Taille template</span><span>${templateSize} octets</span>
+                                <span>Erreur SDK</span><span>${finger.sdkError || 'Aucune'}</span>
+                            </div>
+                        </div>
+                    </article>`;
+            }).join('');
+
+            container.innerHTML = cards + container.innerHTML;
+        }
+
+        function normalizeOutputs(payload) {
+            return payload.map(function (finger) {
+                let imageBase64 = null;
+                let templateBase64 = null;
+                let sdkError = null;
+                (finger.Outputs || []).forEach(function (output) {
+                    if (output.Format === 'JPG' && output.Base64Data) imageBase64 = output.Base64Data;
+                    if (output.Format === 'FMR_ISO' && output.Base64Data) templateBase64 = output.Base64Data;
+                    if (output.ErrorMessage && !sdkError) sdkError = output.ErrorMessage;
+                });
+                return {
+                    objectName: finger.ObjectName,
+                    imageBase64: imageBase64,
+                    templateBase64: templateBase64,
+                    sdkError: sdkError,
+                };
+            });
+        }
+
+        async function capturePose(pose) {
+            if (!selectedDevice) {
+                log('Aucun device sélectionné.', 'warn');
+                return;
+            }
+
+            setBusy(true);
+            const poseMeta = OBJECT_IDS[pose];
+            document.getElementById('summaryPose').textContent = 'Pose ' + pose + ' · ' + poseMeta.label;
+            log('Préparation de la pose ' + pose + ' (' + poseMeta.label + ')', 'info');
+
+            try {
+                await apiRequest('PUT', '/devices/' + encodeURIComponent(selectedDevice.SerialNumber), false);
+                const qs = 'outputFormats=JPG&outputFormats=FMR_ISO&timeout=' + encodeURIComponent(document.getElementById('captureTimeout').value);
+                const payload = await apiRequest('GET', '/fingerprints/' + poseMeta.id + '?' + qs);
+                const normalized = normalizeOutputs(payload);
+                summarizePose(pose, normalized);
+                renderResults(pose, normalized);
+                document.getElementById('rawJson').value = JSON.stringify({ pose: pose, objectId: poseMeta.id, fingers: normalized }, null, 2);
+
+                const errors = normalized.filter(function (finger) { return finger.sdkError; });
+                if (errors.length > 0) {
+                    document.getElementById('summaryError').textContent = errors[0].sdkError;
+                    log('Capture terminée avec erreurs SDK pour la pose ' + pose, 'warn');
+                } else {
+                    document.getElementById('summaryError').textContent = 'Aucune';
+                    log('Capture pose ' + pose + ' terminée sans erreur SDK', 'ok');
+                }
+            } catch (error) {
+                document.getElementById('summaryError').textContent = 'Capture KO';
+                log(error.message, 'error');
+            } finally {
+                setBusy(false);
+            }
+        }
+
+        async function runAllPoses() {
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('rawJson').value = 'Diagnostic en cours...';
+            for (const pose of [1, 2, 3]) {
+                await capturePose(pose);
+            }
+        }
+
+        document.getElementById('btnHealth').addEventListener('click', healthCheck);
+        document.getElementById('btnDevices').addEventListener('click', loadDevices);
+        document.getElementById('btnActivate').addEventListener('click', activateDevice);
+        document.getElementById('btnRunAll').addEventListener('click', runAllPoses);
+        document.querySelectorAll('.pose-btn').forEach(function (button) {
+            button.addEventListener('click', function () {
+                capturePose(Number(button.dataset.pose));
+            });
+        });
+
+        (async function bootstrap() {
+            log('Page chargée. Testez le service puis les devices.', 'info');
+            try {
+                await healthCheck();
+                await loadDevices();
+                if (selectedDevice) {
+                    document.getElementById('btnActivate').disabled = false;
+                    document.getElementById('btnRunAll').disabled = false;
+                    document.querySelectorAll('.pose-btn').forEach(function (button) { button.disabled = false; });
+                }
+            } catch (_) {
+            }
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manuel Utilisateur Complet - DMS CCCM</title>
+  <style>
+    :root {
+      --bg: #f7f8fb;
+      --surface: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --primary: #0f4c81;
+      --accent: #136f63;
+      --warn: #9a3412;
+      --border: #e5e7eb;
+      --shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(180deg, #eef3f9 0%, var(--bg) 260px);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .hero {
+      background: radial-gradient(circle at top right, #dbeafe, #f0f9ff 38%, #ffffff 78%);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 26px;
+      margin-bottom: 20px;
+    }
+
+    h1, h2, h3 {
+      margin-top: 0;
+      letter-spacing: 0.2px;
+    }
+
+    h1 { font-size: 30px; margin-bottom: 8px; }
+    h2 { font-size: 22px; margin-bottom: 10px; }
+    h3 { font-size: 18px; margin-bottom: 8px; }
+
+    .muted { color: var(--muted); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+      margin: 16px 0 24px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 4px 12px rgba(2, 6, 23, 0.04);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      background: #e0f2fe;
+      color: #075985;
+    }
+
+    .badge.role { background: #dcfce7; color: #166534; }
+    .badge.admin { background: #fef3c7; color: #92400e; }
+    .badge.warn { background: #fee2e2; color: #991b1b; }
+
+    .toc a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    .toc a:hover { text-decoration: underline; }
+
+    .module {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 14px;
+      box-shadow: 0 4px 14px rgba(2, 6, 23, 0.05);
+    }
+
+    ul { margin-top: 8px; }
+
+    code {
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    .footer-note {
+      border-left: 4px solid var(--accent);
+      padding: 10px 12px;
+      background: #ecfdf5;
+      border-radius: 8px;
+      margin-top: 16px;
+    }
+
+    .warning {
+      border-left: 4px solid var(--warn);
+      padding: 10px 12px;
+      background: #fff7ed;
+      border-radius: 8px;
+      margin-top: 12px;
+    }
+
+    @media (max-width: 700px) {
+      .container { padding: 14px; }
+      h1 { font-size: 25px; }
+      h2 { font-size: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <section class="hero">
+      <h1>Manuel Utilisateur Complet - DMS CCCM</h1>
+      <p class="muted">
+        Version: 1.0 | Public cible: Super Admin, Admin Organisation, Utilisateur
+      </p>
+      <p>
+        Ce manuel couvre tous les modules principaux exposes par le menu lateral et les routes actives de l'application.
+      </p>
+    </section>
+
+    <section class="card toc">
+      <h2>Sommaire</h2>
+      <ol>
+        <li><a href="#acces">Acces et profils</a></li>
+        <li><a href="#modules-generaux">Modules generaux</a></li>
+        <li><a href="#modules-admin">Modules administration</a></li>
+        <li><a href="#modules-programme">Cadre de programmation</a></li>
+        <li><a href="#modules-organisation">Modules organisation</a></li>
+        <li><a href="#modules-ossat">Modules OSSAT</a></li>
+        <li><a href="#modules-households">Modules Menages N1/N2</a></li>
+        <li><a href="#biometrie">Capture biometrie et doublons</a></li>
+        <li><a href="#faq">FAQ rapide</a></li>
+      </ol>
+    </section>
+
+    <section id="acces" class="module">
+      <h2>1. Acces et profils</h2>
+      <div class="grid">
+        <div class="card">
+          <span class="badge role">Profil</span>
+          <h3>Super Admin</h3>
+          <ul>
+            <li>Acces complet a tous les modules.</li>
+            <li>Gere organisations, utilisateurs, references OSSAT.</li>
+            <li>Valide certains workflows (ex: profils services).</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="badge admin">Profil</span>
+          <h3>Admin Organisation</h3>
+          <ul>
+            <li>Gere ses utilisateurs et ses donnees operationnelles.</li>
+            <li>Accede au dashboard organisation et projets associes.</li>
+            <li>Soumet les donnees suivant les regles de role.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="badge">Profil</span>
+          <h3>Utilisateur</h3>
+          <ul>
+            <li>Accede aux sites attribues.</li>
+            <li>Saisit les donnees terrain selon permissions.</li>
+            <li>Peut creer/mettre a jour les enregistrements autorises.</li>
+          </ul>
+        </div>
+      </div>
+      <p><strong>Connexion:</strong> page <code>/login</code></p>
+      <p><strong>Changement mot de passe:</strong> <code>/change-password</code></p>
+    </section>
+
+    <section id="modules-generaux" class="module">
+      <h2>2. Modules generaux</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Tableau de bord</h3>
+          <p>URL: <code>/dashboard</code></p>
+          <ul>
+            <li>Vue d'ensemble des indicateurs.</li>
+            <li>Filtres et visualisations.</li>
+            <li>Navigation vers modules operationnels.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Master List des Sites</h3>
+          <p>URL: <code>/sites/master-list</code></p>
+          <ul>
+            <li>Liste centralisee des sites.</li>
+            <li>Export Excel disponible.</li>
+            <li>Point de reference pour controle qualite.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Mes Sites</h3>
+          <p>URL: <code>/my/sites</code></p>
+          <ul>
+            <li>Sites attribues a l'utilisateur connecte.</li>
+            <li>Mise a jour infos de site selon droits.</li>
+            <li>Suppression photo du site si autorise.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Profils de Services</h3>
+          <p>URL: <code>/service-profiles</code></p>
+          <ul>
+            <li>Creation, edition et soumission des profils.</li>
+            <li>Workflow de validation (approve/reject).</li>
+            <li>Suivi des etats de soumission.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="modules-admin" class="module">
+      <h2>3. Modules administration</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Gestion des utilisateurs</h3>
+          <p>URL: <code>/admin/users</code></p>
+          <ul>
+            <li>Creer, modifier, activer/desactiver des comptes.</li>
+            <li>Affecter roles et organisation.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Gestion des organisations</h3>
+          <p>URL: <code>/admin/organisations</code></p>
+          <ul>
+            <li>CRUD des organisations.</li>
+            <li>Activation/desactivation d'une organisation.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Attribution des sites</h3>
+          <p>URL: <code>/admin/user-site-access</code></p>
+          <ul>
+            <li>Accorder/revoquer acces utilisateur par site.</li>
+            <li>Gestion individuelle et en masse.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Mouvements de population</h3>
+          <p>URL: <code>/admin/mouvements</code></p>
+          <ul>
+            <li>Saisie et import des mouvements.</li>
+            <li>Validation/rejet selon role.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="modules-programme" class="module">
+      <h2>4. Cadre de programmation</h2>
+      <p>Accessible principalement au profil Super Admin.</p>
+      <div class="grid">
+        <div class="card">
+          <h3>Import Excel Programme</h3>
+          <p>URL: <code>/admin/programme/import</code></p>
+          <ul>
+            <li>Telecharger modele.</li>
+            <li>Importer les donnees programme.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Indicateurs</h3>
+          <p>URL: <code>/admin/programme/indicateurs</code></p>
+          <ul>
+            <li>CRUD complet des indicateurs.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Activites</h3>
+          <p>URL: <code>/admin/programme/activites</code></p>
+          <ul>
+            <li>CRUD complet des activites.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Sous-activites</h3>
+          <p>URL: <code>/admin/programme/sous-activites</code></p>
+          <ul>
+            <li>CRUD complet des sous-activites.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Import activites Excel</h3>
+          <p>URL: <code>/imports/project-activities</code></p>
+          <ul>
+            <li>Import operationnel des activites projet.</li>
+            <li>Template dedie disponible.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="modules-organisation" class="module">
+      <h2>5. Modules organisation</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Tableau de bord organisation</h3>
+          <p>URL: <code>/organisation/dashboard</code></p>
+          <ul>
+            <li>Vue consolidee des activites de l'organisation.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Sites organisation</h3>
+          <p>URL: <code>/organisation/sites</code></p>
+          <ul>
+            <li>Mise a jour des sites de l'organisation.</li>
+            <li>Gestion des photos associees.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Projets organisation</h3>
+          <p>URL: <code>/organisation/projects</code></p>
+          <ul>
+            <li>Gestion des projets et donnees d'activites.</li>
+            <li>Synchronisation des donnees projets/activites.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="modules-ossat" class="module">
+      <h2>6. Modules OSSAT</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Liste des rapports OSSAT</h3>
+          <p>URL: <code>/ossat</code></p>
+          <ul>
+            <li>Consulter les rapports existants.</li>
+            <li>Filtrer et verifier les soumissions.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Nouveau rapport OSSAT</h3>
+          <p>URL: <code>/ossat/create</code></p>
+          <ul>
+            <li>Creation de rapport par site/territoire.</li>
+            <li>Sauvegarde et edition apres creation.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Gestion des listes OSSAT</h3>
+          <p>URL: <code>/admin/ossat-choix</code></p>
+          <ul>
+            <li>Administration des listes de choix.</li>
+            <li>Activation/desactivation des options.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="modules-households" class="module">
+      <h2>7. Modules Menages N1/N2</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Menages - Niveau 1</h3>
+          <p>URL: <code>/households</code></p>
+          <ul>
+            <li>Creation et gestion du chef de menage.</li>
+            <li>Totaux de composition du menage.</li>
+            <li>Collecte photo et empreintes.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Membres - Niveau 2</h3>
+          <p>URL: <code>/households/level2</code></p>
+          <ul>
+            <li>Vue d'ensemble des membres details.</li>
+            <li>Ajout, edition, suppression de membres.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Upgrade N1 vers N2</h3>
+          <p>URL: <code>/households/{household}/upgrade-to-level2</code></p>
+          <ul>
+            <li>Passage progressif des menages vers detail complet.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="biometrie" class="module">
+      <h2>8. Biometrie, capture et doublons</h2>
+      <ul>
+        <li>Capture photo: <code>/households/capture-photo</code></li>
+        <li>Capture empreinte: <code>/households/capture-fingerprint</code></li>
+        <li>Controle doublon empreinte: <code>/households/check-fingerprint-duplicate</code></li>
+        <li>Analyse doublons: <code>/households/fingerprint-duplicates</code></li>
+        <li>SDK test: <code>/households/fingerprint-sdk-test</code></li>
+      </ul>
+
+      <div class="warning">
+        <strong>Message "Qualite insuffisante"</strong><br />
+        Cela signifie qu'une image a ete capturee mais que le moteur de template ne peut pas produire un gabarit fiable,
+        et qu'aucun match JPG exact n'a ete trouve. Refaire une capture avec doigt propre, vitre propre et pression stable.
+      </div>
+    </section>
+
+    <section id="faq" class="module">
+      <h2>9. FAQ rapide</h2>
+      <h3>Je ne vois pas un module dans le menu</h3>
+      <p>Verifier votre role utilisateur et les permissions associees.</p>
+
+      <h3>Je ne peux pas modifier un enregistrement</h3>
+      <p>Verifier si l'action est reservee a Super Admin ou au proprietaire de l'organisation.</p>
+
+      <h3>Import Excel echoue</h3>
+      <p>Utiliser le template fourni dans le module d'import, verifier colonnes, formats et doublons.</p>
+
+      <h3>Problemes de capture empreintes</h3>
+      <p>Verifier service WebAPI, connexion scanner, qualite de pose et recapturer.</p>
+
+      <div class="footer-note">
+        Conseil: conserver ce manuel comme reference centrale, puis ajouter des captures ecran internes par module
+        pour vos sessions de formation terrain.
+      </div>
+    </section>
+  </div>
+</body>
+</html>

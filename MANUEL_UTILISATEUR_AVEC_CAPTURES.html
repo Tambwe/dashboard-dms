@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manuel d'utilisation detaille avec captures - DMS CCCM</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --ink: #111827;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --brand: #0f4c81;
+      --accent: #0f766e;
+      --warning: #b45309;
+      --shadow: 0 8px 22px rgba(2, 6, 23, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #e8f0fb 0%, var(--bg) 220px);
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1220px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .hero {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero h1 {
+      margin: 0 0 8px;
+      color: var(--brand);
+      font-size: 30px;
+      line-height: 1.2;
+    }
+
+    .hero p {
+      margin: 4px 0;
+      color: var(--muted);
+    }
+
+    .toc {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 16px;
+    }
+
+    .toc a {
+      color: #1d4ed8;
+      text-decoration: none;
+    }
+
+    .toc a:hover { text-decoration: underline; }
+
+    .toc ul {
+      margin: 8px 0 0 18px;
+      padding: 0;
+      columns: 2;
+    }
+
+    .section-title {
+      margin: 18px 0 10px;
+      color: #0f172a;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 6px;
+      font-size: 24px;
+    }
+
+    .module {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(2, 6, 23, 0.06);
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+
+    .module-header {
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      background: #f8fafc;
+    }
+
+    .module-header h3 {
+      margin: 0 0 3px;
+      font-size: 18px;
+    }
+
+    .route {
+      display: inline-block;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      color: var(--muted);
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 2px 8px;
+    }
+
+    .module-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 0;
+    }
+
+    .content {
+      padding: 14px;
+    }
+
+    .content h4 {
+      margin: 0 0 5px;
+      font-size: 15px;
+      color: #1f2937;
+    }
+
+    .content ul, .content ol {
+      margin: 0 0 10px 18px;
+      padding: 0;
+    }
+
+    .content li { margin-bottom: 4px; }
+
+    .kpi {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 700;
+      color: #065f46;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      border-radius: 999px;
+      padding: 2px 8px;
+      margin-right: 6px;
+      margin-bottom: 6px;
+    }
+
+    .warn {
+      border-left: 3px solid var(--warning);
+      background: #fff7ed;
+      padding: 8px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-top: 8px;
+    }
+
+    .shot-wrap {
+      border-left: 1px solid var(--line);
+      background: #f8fafc;
+      padding: 10px;
+    }
+
+    .shot {
+      width: 100%;
+      height: auto;
+      border: 1px solid #dbe3f0;
+      border-radius: 10px;
+      display: block;
+      background: #eef2ff;
+    }
+
+    .caption {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    .footer-note {
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--accent);
+      background: #f0fdfa;
+      border-radius: 10px;
+      padding: 12px;
+      color: #0f172a;
+    }
+
+    @media (max-width: 980px) {
+      .module-grid { grid-template-columns: 1fr; }
+      .shot-wrap { border-left: 0; border-top: 1px solid var(--line); }
+      .toc ul { columns: 1; }
+    }
+
+    @media print {
+      body { background: #fff; }
+      .container { max-width: 100%; padding: 0; }
+      .module { break-inside: avoid; page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <section class="hero">
+      <h1>Manuel d'utilisation detaille avec captures d'ecran</h1>
+      <p>Application: DMS CCCM</p>
+      <p>Cette version detaille les fonctionnalites module par module avec procedure d'utilisation et controle visuel.</p>
+      <p>Captures source: docs/manual/screenshots/*.png</p>
+    </section>
+
+    <section class="toc">
+      <strong>Sommaire rapide</strong>
+      <ul>
+        <li><a href="#m-dashboard">Tableau de bord</a></li>
+        <li><a href="#m-master-list">Master List des Sites</a></li>
+        <li><a href="#m-users">Gestion des utilisateurs</a></li>
+        <li><a href="#m-orgs">Gestion des organisations</a></li>
+        <li><a href="#m-access">Attribution des sites</a></li>
+        <li><a href="#m-mouvements">Mouvements de population</a></li>
+        <li><a href="#m-programme-import">Import programme</a></li>
+        <li><a href="#m-programme-indicateurs">Indicateurs</a></li>
+        <li><a href="#m-programme-activites">Activites</a></li>
+        <li><a href="#m-programme-sous-activites">Sous-activites</a></li>
+        <li><a href="#m-import-activites">Import activites Excel</a></li>
+        <li><a href="#m-mes-sites">Mes Sites</a></li>
+        <li><a href="#m-service-profiles">Profils de Services</a></li>
+        <li><a href="#m-ossat-liste">OSSAT - Liste</a></li>
+        <li><a href="#m-ossat-nouveau">OSSAT - Nouveau rapport</a></li>
+        <li><a href="#m-ossat-choix">OSSAT - Listes de choix</a></li>
+        <li><a href="#m-households-n1">Menages Niveau 1</a></li>
+        <li><a href="#m-households-create">Creation Menage N1</a></li>
+        <li><a href="#m-households-level2">Membres Niveau 2</a></li>
+      </ul>
+    </section>
+
+    <h2 class="section-title">1. Modules de pilotage</h2>
+
+    <article id="m-dashboard" class="module">
+      <div class="module-header">
+        <h3>Tableau de bord</h3>
+        <span class="route">/dashboard</span>
+      </div>
+      <div class="module-grid">
+        <div class="content">
+          <span class="kpi">Vue globale</span><span class="kpi">Indicateurs</span><span class="kpi">Navigation</span>
+          <h4>Fonctionnalites detaillees</h4>
+          <ul>
+            <li>Affiche les indicateurs de synthese de la plateforme.</li>
+            <li>Permet de naviguer rapidement vers les modules operationnels.</li>
+            <li>Centralise les raccourcis vers les rapports et la gestion terrain.</li>
+          </ul>
+          <h4>Comment l'utiliser</h4>
+          <ol>
+            <li>Verifier le profil actif en haut a droite.</li>
+            <li>Lire les KPI principaux pour identifier les priorites.</li>
+            <li>Cliquer sur un module via le menu gauche pour poursuivre l'action.</li>
+          </ol>
+        </div>
+        <div class="shot-wrap">
+          <img class="shot" src="docs/manual/screenshots/dashboard.png" alt="Capture tableau de bord" />
+          <div class="caption">Capture ecran - Tableau de bord</div>
+        </div>
+      </div>
+    </article>
+
+    <article id="m-master-list" class="module">
+      <div class="module-header">
+        <h3>Master List des Sites</h3>
+        <span class="route">/sites/master-list</span>
+      </div>
+      <div class="module-grid">
+        <div class="content">
+          <span class="kpi">Referentiel</span><span class="kpi">Recherche</span><span class="kpi">Export</span>
+          <h4>Fonctionnalites detaillees</h4>
+          <ul>
+            <li>Liste complete des sites avec localisation et indicateurs associes.</li>
+            <li>Barre de recherche multi-criteres (nom, code, province, territoire).</li>
+            <li>Export Excel pour analyse externe et reporting.</li>
+          </ul>
+          <h4>Procedure</h4>
+          <ol>
+            <li>Saisir un terme dans le champ de recherche.</li>
+            <li>Ajuster le nombre de lignes par page si necessaire.</li>
+            <li>Lancer Rechercher puis Exporter Excel pour extraction.</li>
+          </ol>
+        </div>
+        <div class="shot-wrap">
+          <img class="shot" src="docs/manual/screenshots/master_list_sites.png" alt="Capture master list des sites" />
+          <div class="caption">Capture ecran - Master List des Sites</div>
+        </div>
+      </div>
+    </article>
+
+    <h2 class="section-title">2. Administration</h2>
+
+    <article id="m-users" class="module">
+      <div class="module-header"><h3>Gestion des utilisateurs</h3><span class="route">/admin/users</span></div>
+      <div class="module-grid">
+        <div class="content">
+          <span class="kpi">Comptes</span><span class="kpi">Roles</span><span class="kpi">Activation</span>
+          <h4>Fonctionnalites detaillees</h4>
+          <ul>
+            <li>Creation de nouveaux comptes utilisateurs.</li>
+            <li>Edition des informations profil, role et rattachement organisation.</li>
+            <li>Activation/desactivation pour controler l'acces applicatif.</li>
+          </ul>
+          <h4>Procedure</h4>
+          <ol>
+            <li>Cliquer sur Ajouter/Creer utilisateur.</li>
+            <li>Renseigner les informations obligatoires.</li>
+            <li>Definir le role et sauvegarder.</li>
+          </ol>
+        </div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/admin_users.png" alt="Capture gestion utilisateurs" /><div class="caption">Capture ecran - Gestion des utilisateurs</div></div>
+      </div>
+    </article>
+
+    <article id="m-orgs" class="module">
+      <div class="module-header"><h3>Gestion des organisations</h3><span class="route">/admin/organisations</span></div>
+      <div class="module-grid">
+        <div class="content">
+          <span class="kpi">Organisations</span><span class="kpi">Parametrage</span>
+          <h4>Fonctionnalites detaillees</h4>
+          <ul>
+            <li>Creation et edition des organisations partenaires.</li>
+            <li>Gestion du statut actif/inactif.</li>
+            <li>Reference de rattachement pour utilisateurs et sites.</li>
+          </ul>
+        </div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/admin_organisations.png" alt="Capture gestion organisations" /><div class="caption">Capture ecran - Gestion des organisations</div></div>
+      </div>
+    </article>
+
+    <article id="m-access" class="module">
+      <div class="module-header"><h3>Attribution des sites</h3><span class="route">/admin/user-site-access</span></div>
+      <div class="module-grid">
+        <div class="content">
+          <span class="kpi">Permissions</span><span class="kpi">Affectation</span>
+          <h4>Fonctionnalites detaillees</h4>
+          <ul>
+            <li>Affecter un ou plusieurs sites a un utilisateur.</li>
+            <li>Modifier les droits de collecte et d'edition.</li>
+            <li>Retirer un acces non conforme.</li>
+          </ul>
+          <h4>Controle qualite</h4>
+          <ul>
+            <li>Verifier qu'un utilisateur n'a acces qu'aux sites autorises.</li>
+            <li>Valider les droits apres chaque changement d'affectation.</li>
+          </ul>
+        </div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/admin_user_site_access.png" alt="Capture attribution sites" /><div class="caption">Capture ecran - Attribution des sites</div></div>
+      </div>
+    </article>
+
+    <article id="m-mouvements" class="module">
+      <div class="module-header"><h3>Mouvements de population</h3><span class="route">/admin/mouvements</span></div>
+      <div class="module-grid">
+        <div class="content">
+          <span class="kpi">Saisie</span><span class="kpi">Import</span><span class="kpi">Validation</span>
+          <h4>Fonctionnalites detaillees</h4>
+          <ul>
+            <li>Enregistrer les mouvements de population par site.</li>
+            <li>Importer les mouvements via modele Excel.</li>
+            <li>Valider ou rejeter les mouvements selon role.</li>
+          </ul>
+        </div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/admin_mouvements.png" alt="Capture mouvements" /><div class="caption">Capture ecran - Mouvements de population</div></div>
+      </div>
+    </article>
+
+    <h2 class="section-title">3. Cadre de programmation</h2>
+
+    <article id="m-programme-import" class="module">
+      <div class="module-header"><h3>Import programme</h3><span class="route">/admin/programme/import</span></div>
+      <div class="module-grid">
+        <div class="content">
+          <ul>
+            <li>Telechargement du template officiel.</li>
+            <li>Import des donnees de cadrage programme.</li>
+            <li>Journal d'erreurs en cas de structure invalide.</li>
+          </ul>
+        </div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/programme_import.png" alt="Capture import programme" /><div class="caption">Capture ecran - Import programme</div></div>
+      </div>
+    </article>
+
+    <article id="m-programme-indicateurs" class="module">
+      <div class="module-header"><h3>Indicateurs</h3><span class="route">/admin/programme/indicateurs</span></div>
+      <div class="module-grid">
+        <div class="content"><ul><li>Creation et parametrage des indicateurs.</li><li>Edition des metadonnees et suppression controlee.</li></ul></div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/programme_indicateurs.png" alt="Capture indicateurs" /><div class="caption">Capture ecran - Indicateurs</div></div>
+      </div>
+    </article>
+
+    <article id="m-programme-activites" class="module">
+      <div class="module-header"><h3>Activites</h3><span class="route">/admin/programme/activites</span></div>
+      <div class="module-grid">
+        <div class="content"><ul><li>Creation, classement et gestion du catalogue d'activites.</li><li>Lien avec indicateurs et sous-activites.</li></ul></div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/programme_activites.png" alt="Capture activites" /><div class="caption">Capture ecran - Activites</div></div>
+      </div>
+    </article>
+
+    <article id="m-programme-sous-activites" class="module">
+      <div class="module-header"><h3>Sous-activites</h3><span class="route">/admin/programme/sous-activites</span></div>
+      <div class="module-grid">
+        <div class="content"><ul><li>Detail des sous-composantes operationnelles.</li><li>Structuration fine des actions de terrain.</li></ul></div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/programme_sous_activites.png" alt="Capture sous activites" /><div class="caption">Capture ecran - Sous-activites</div></div>
+      </div>
+    </article>
+
+    <article id="m-import-activites" class="module">
+      <div class="module-header"><h3>Import activites Excel</h3><span class="route">/imports/project-activities</span></div>
+      <div class="module-grid">
+        <div class="content"><ul><li>Import de donnees activites operationnelles.</li><li>Controle des formats et remontes d'erreurs.</li></ul></div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/import_activites_excel.png" alt="Capture import activites excel" /><div class="caption">Capture ecran - Import activites Excel</div></div>
+      </div>
+    </article>
+
+    <h2 class="section-title">4. Operations terrain et services</h2>
+
+    <article id="m-mes-sites" class="module">
+      <div class="module-header"><h3>Mes Sites</h3><span class="route">/my/sites</span></div>
+      <div class="module-grid">
+        <div class="content">
+          <ul>
+            <li>Consulter les sites attribues a l'agent connecte.</li>
+            <li>Mettre a jour les informations du site selon droits.</li>
+            <li>Gerer certains medias associes au site.</li>
+          </ul>
+        </div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/mes_sites.png" alt="Capture mes sites" /><div class="caption">Capture ecran - Mes Sites</div></div>
+      </div>
+    </article>
+
+    <article id="m-service-profiles" class="module">
+      <div class="module-header"><h3>Profils de Services</h3><span class="route">/service-profiles</span></div>
+      <div class="module-grid">
+        <div class="content">
+          <ul>
+            <li>Creer et editer un profil de service par site.</li>
+            <li>Soumettre pour validation.</li>
+            <li>Suivre les statuts: brouillon, soumis, approuve, rejete.</li>
+          </ul>
+        </div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/service_profiles.png" alt="Capture profils services" /><div class="caption">Capture ecran - Profils de Services</div></div>
+      </div>
+    </article>
+
+    <h2 class="section-title">5. OSSAT</h2>
+
+    <article id="m-ossat-liste" class="module">
+      <div class="module-header"><h3>OSSAT - Liste des rapports</h3><span class="route">/ossat</span></div>
+      <div class="module-grid">
+        <div class="content"><ul><li>Consulter l'historique des rapports OSSAT.</li><li>Filtrer et verifier les enregistrements.</li></ul></div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/ossat_liste.png" alt="Capture liste ossat" /><div class="caption">Capture ecran - OSSAT liste</div></div>
+      </div>
+    </article>
+
+    <article id="m-ossat-nouveau" class="module">
+      <div class="module-header"><h3>OSSAT - Nouveau rapport</h3><span class="route">/ossat/create</span></div>
+      <div class="module-grid">
+        <div class="content"><ul><li>Saisir un nouveau rapport complet pour un site.</li><li>Renseigner les rubriques obligatoires avant soumission.</li></ul></div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/ossat_nouveau.png" alt="Capture nouveau rapport ossat" /><div class="caption">Capture ecran - OSSAT nouveau rapport</div></div>
+      </div>
+    </article>
+
+    <article id="m-ossat-choix" class="module">
+      <div class="module-header"><h3>OSSAT - Listes de choix</h3><span class="route">/admin/ossat-choix</span></div>
+      <div class="module-grid">
+        <div class="content"><ul><li>Administrer les options des listes deroulantes OSSAT.</li><li>Activer/desactiver des valeurs sans modifier le code.</li></ul></div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/ossat_choix.png" alt="Capture choix ossat" /><div class="caption">Capture ecran - OSSAT listes de choix</div></div>
+      </div>
+    </article>
+
+    <h2 class="section-title">6. Menages et biometrie</h2>
+
+    <article id="m-households-n1" class="module">
+      <div class="module-header"><h3>Menages Niveau 1</h3><span class="route">/households</span></div>
+      <div class="module-grid">
+        <div class="content"><ul><li>Consulter la liste des menages N1.</li><li>Acceder a la creation, edition et suppression selon role.</li></ul></div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/households_n1.png" alt="Capture menages niveau 1" /><div class="caption">Capture ecran - Menages Niveau 1</div></div>
+      </div>
+    </article>
+
+    <article id="m-households-create" class="module">
+      <div class="module-header"><h3>Creation Menage Niveau 1</h3><span class="route">/households/create</span></div>
+      <div class="module-grid">
+        <div class="content">
+          <span class="kpi">Photo</span><span class="kpi">Empreintes</span><span class="kpi">Doublon</span>
+          <h4>Fonctionnalites detaillees</h4>
+          <ul>
+            <li>Saisie de l'identite du chef de menage et composition globale.</li>
+            <li>Capture photo et empreintes (3 poses).</li>
+            <li>Controle de doublon biometrie via templates et fallback JPG.</li>
+          </ul>
+          <h4>Procedure conseillee</h4>
+          <ol>
+            <li>Renseigner les champs obligatoires de localisation et identite.</li>
+            <li>Capturer la photo du chef de menage.</li>
+            <li>Capturer les poses d'empreintes dans l'ordre affiche.</li>
+            <li>Verifier les badges de retour avant enregistrement.</li>
+          </ol>
+          <div class="warn">
+            Si le message indique "Qualite insuffisante - doublon JPG non trouve", recapturer avec doigt et vitre propres,
+            pression stable et pose complete.
+          </div>
+        </div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/households_create.png" alt="Capture creation menage" /><div class="caption">Capture ecran - Formulaire creation Menage N1</div></div>
+      </div>
+    </article>
+
+    <article id="m-households-level2" class="module">
+      <div class="module-header"><h3>Membres Niveau 2</h3><span class="route">/households/level2</span></div>
+      <div class="module-grid">
+        <div class="content"><ul><li>Vue detaillee des membres de menages.</li><li>Gestion des fiches individuelles (ajout, edition, suppression).</li></ul></div>
+        <div class="shot-wrap"><img class="shot" src="docs/manual/screenshots/households_level2.png" alt="Capture menages niveau 2" /><div class="caption">Capture ecran - Membres Niveau 2</div></div>
+      </div>
+    </article>
+
+    <section class="footer-note">
+      Ce manuel detaille est prevu pour la formation utilisateur. Pour une version impression A4, utiliser MANUEL_UTILISATEUR_A4.html.
+    </section>
+  </div>
+</body>
+</html>

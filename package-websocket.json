@@ -1,0 +1,24 @@
+{
+  "name": "thales-websocket-bridge",
+  "version": "1.0.0",
+  "description": "Serveur WebSocket pour Scanner Thales Multifinger",
+  "main": "thales-websocket-server.js",
+  "scripts": {
+    "start": "node thales-websocket-server.js",
+    "dev": "nodemon thales-websocket-server.js"
+  },
+  "keywords": [
+    "thales",
+    "fingerprint",
+    "websocket",
+    "biometric"
+  ],
+  "author": "Dashboard DMS",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  }
+}

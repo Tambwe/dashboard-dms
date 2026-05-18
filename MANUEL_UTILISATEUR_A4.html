@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manuel Utilisateur DMS CCCM - Version A4</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 14mm;
+    }
+
+    :root {
+      --text: #111827;
+      --muted: #4b5563;
+      --line: #d1d5db;
+      --title: #0b3b63;
+      --section: #0f172a;
+      --bg-note: #f8fafc;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Arial", "Helvetica", sans-serif;run larave
+      color: var(--text);
+      line-height: 1.45;
+      background: #fff;
+      font-size: 11pt;
+    }
+
+    .doc {
+      max-width: 190mm;
+      margin: 0 auto;
+    }
+
+    .cover {
+      border: 1px solid var(--line);
+      padding: 18mm 12mm;
+      margin-bottom: 8mm;
+      page-break-after: always;
+    }
+
+    h1 {
+      margin: 0 0 5mm;
+      font-size: 24pt;
+      color: var(--title);
+      line-height: 1.2;
+    }
+
+    h2 {
+      margin: 0 0 3mm;
+      font-size: 15pt;
+      color: var(--section);
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 2mm;
+    }
+
+    h3 {
+      margin: 4mm 0 2mm;
+      font-size: 12pt;
+    }
+
+    p { margin: 0 0 3mm; }
+    ul, ol { margin: 2mm 0 3mm 6mm; }
+    li { margin-bottom: 1.2mm; }
+
+    .muted { color: var(--muted); }
+
+    .meta {
+      background: var(--bg-note);
+      border: 1px solid var(--line);
+      padding: 3mm;
+      margin-top: 6mm;
+    }
+
+    .section {
+      margin-bottom: 7mm;
+      page-break-inside: avoid;
+    }
+
+    .module {
+      border: 1px solid var(--line);
+      padding: 3mm;
+      margin-bottom: 2.5mm;
+      page-break-inside: avoid;
+    }
+
+    .module strong {
+      display: inline-block;
+      min-width: 62mm;
+    }
+
+    .note {
+      border-left: 3px solid #0369a1;
+      background: #f0f9ff;
+      padding: 2.5mm 3mm;
+      margin: 3mm 0;
+    }
+
+    .warn {
+      border-left: 3px solid #b45309;
+      background: #fff7ed;
+      padding: 2.5mm 3mm;
+      margin: 3mm 0;
+    }
+
+    .pb { page-break-before: always; }
+
+    .footer {
+      margin-top: 6mm;
+      border-top: 1px solid var(--line);
+      padding-top: 2mm;
+      font-size: 10pt;
+      color: var(--muted);
+    }
+
+    @media screen {
+      body { background: #eef2f7; padding: 14px 0; }
+      .doc { background: white; padding: 12mm; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+      .cover { page-break-after: auto; }
+      .pb { page-break-before: auto; }
+    }
+
+    @media print {
+      .screen-only { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="doc">
+    <section class="cover">
+      <h1>Manuel Utilisateur DMS CCCM</h1>
+      <p><strong>Version impression A4</strong></p>
+      <p class="muted">Ce document couvre tous les modules operationnels et administratifs de la plateforme.</p>
+
+      <div class="meta">
+        <p><strong>Produit:</strong> DMS CCCM</p>
+        <p><strong>Public cible:</strong> Super Admin, Admin Organisation, Utilisateur</p>
+        <p><strong>Date:</strong> Avril 2026</p>
+      </div>
+
+      <div class="note">
+        Pour imprimer: ouvrir ce fichier dans un navigateur puis lancer l'impression en conservant l'echelle a 100%.
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>1. Acces et profils</h2>
+      <ul>
+        <li><strong>Super Admin:</strong> acces total a la configuration, administration et validation.</li>
+        <li><strong>Admin Organisation:</strong> gestion operationnelle de son perimetre.</li>
+        <li><strong>Utilisateur:</strong> saisie terrain et consultation selon droits.</li>
+      </ul>
+      <p><strong>Connexion:</strong> /login</p>
+      <p><strong>Mot de passe:</strong> /change-password</p>
+    </section>
+
+    <section class="section">
+      <h2>2. Modules generaux</h2>
+      <div class="module"><strong>Tableau de bord</strong> /dashboard<br/>Vue d'ensemble des indicateurs et navigation globale.</div>
+      <div class="module"><strong>Master List des Sites</strong> /sites/master-list<br/>Referentiel central des sites et export Excel.</div>
+      <div class="module"><strong>Mes Sites</strong> /my/sites<br/>Sites assignes a l'utilisateur connecte.</div>
+      <div class="module"><strong>Profils de Services</strong> /service-profiles<br/>Creation, soumission et suivi du workflow.</div>
+    </section>
+
+    <section class="section pb">
+      <h2>3. Administration</h2>
+      <div class="module"><strong>Gestion des utilisateurs</strong> /admin/users<br/>Creation, edition, activation et roles.</div>
+      <div class="module"><strong>Gestion des organisations</strong> /admin/organisations<br/>Parametrage et statut des organisations.</div>
+      <div class="module"><strong>Attribution des sites</strong> /admin/user-site-access<br/>Gestion des acces par utilisateur et par site.</div>
+      <div class="module"><strong>Mouvements de population</strong> /admin/mouvements<br/>Saisie, import et validation des mouvements.</div>
+    </section>
+
+    <section class="section">
+      <h2>4. Cadre de programmation</h2>
+      <div class="module"><strong>Import programme</strong> /admin/programme/import</div>
+      <div class="module"><strong>Indicateurs</strong> /admin/programme/indicateurs</div>
+      <div class="module"><strong>Activites</strong> /admin/programme/activites</div>
+      <div class="module"><strong>Sous-activites</strong> /admin/programme/sous-activites</div>
+      <div class="module"><strong>Import activites Excel</strong> /imports/project-activities</div>
+    </section>
+
+    <section class="section pb">
+      <h2>5. Organisation</h2>
+      <div class="module"><strong>Dashboard organisation</strong> /organisation/dashboard</div>
+      <div class="module"><strong>Sites organisation</strong> /organisation/sites</div>
+      <div class="module"><strong>Projets organisation</strong> /organisation/projects</div>
+    </section>
+
+    <section class="section">
+      <h2>6. OSSAT</h2>
+      <div class="module"><strong>Liste rapports</strong> /ossat</div>
+      <div class="module"><strong>Nouveau rapport</strong> /ossat/create</div>
+      <div class="module"><strong>Listes de choix</strong> /admin/ossat-choix</div>
+    </section>
+
+    <section class="section">
+      <h2>7. Menages Niveau 1 et Niveau 2</h2>
+      <div class="module"><strong>Menages N1</strong> /households</div>
+      <div class="module"><strong>Creation N1</strong> /households/create</div>
+      <div class="module"><strong>Membres N2</strong> /households/level2</div>
+    </section>
+
+    <section class="section pb">
+      <h2>8. Biometrie et doublons</h2>
+      <ul>
+        <li>/households/capture-photo</li>
+        <li>/households/capture-fingerprint</li>
+        <li>/households/check-fingerprint-duplicate</li>
+        <li>/households/fingerprint-duplicates</li>
+      </ul>
+      <div class="warn">
+        Message "Qualite insuffisante - doublon JPG non trouve" signifie qu'une image est captee, mais sans gabarit FMR fiable,
+        et sans match JPG exact.
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>9. Checklist de support</h2>
+      <ol>
+        <li>Verifier role et permissions utilisateur.</li>
+        <li>Verifier filtres et donnees obligatoires.</li>
+        <li>Verifier connectivite et services externes (WebAPI, scanner).</li>
+        <li>Verifier format du fichier pour les imports Excel.</li>
+      </ol>
+      <div class="footer">DMS CCCM - Manuel utilisateur A4</div>
+    </section>
+  </main>
+</body>
+</html>

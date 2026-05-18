@@ -1,0 +1,8 @@
+Apr 25, 2026 3:50:36 AM com.greenbit.webapi.GBWebAPI main
+INFO: WebAPI start
+Apr 25, 2026 3:51:01 AM com.greenbit.webapi.DeviceController getDevices
+INFO: Request for Devices list
+Apr 25, 2026 3:51:06 AM com.greenbit.webapi.DeviceController getDevices
+INFO: Request for Devices list
+Apr 25, 2026 3:51:56 AM com.greenbit.webapi.DeviceController getDevices
+INFO: Request for Devices list
