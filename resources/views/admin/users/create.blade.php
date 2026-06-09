@@ -82,6 +82,8 @@
                                 Super Administrateur
                             @elseif($role === 'admin_organisation')
                                 Administrateur Organisation
+                            @elseif($role === 'sig_user')
+                                Utilisateur SIG
                             @else
                                 Utilisateur
                             @endif

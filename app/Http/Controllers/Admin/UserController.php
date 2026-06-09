@@ -37,10 +37,10 @@ class UserController extends Controller
         // Récupérer les organisations disponibles
         if ($user->isSuperAdmin()) {
             $organisations = Organisation::where('is_active', true)->get();
-            $roles = ['super_admin', 'admin_organisation', 'user'];
+            $roles = ['super_admin', 'admin_organisation', 'user', 'sig_user'];
         } else {
             $organisations = Organisation::where('id', $user->organisation_id)->get();
-            $roles = ['admin_organisation', 'user'];
+            $roles = ['admin_organisation', 'user', 'sig_user'];
         }
 
         return view('admin.users.create', compact('organisations', 'roles'));
@@ -58,7 +58,7 @@ class UserController extends Controller
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'phone' => ['nullable', 'string', 'max:20'],
-            'role' => ['required', Rule::in(['super_admin', 'admin_organisation', 'user'])],
+            'role' => ['required', Rule::in(['super_admin', 'admin_organisation', 'user', 'sig_user'])],
         ];
 
         // Si super admin, organisation est requise sauf pour super_admin
@@ -122,10 +122,10 @@ class UserController extends Controller
         // Récupérer les organisations disponibles
         if ($currentUser->isSuperAdmin()) {
             $organisations = Organisation::where('is_active', true)->get();
-            $roles = ['super_admin', 'admin_organisation', 'user'];
+            $roles = ['super_admin', 'admin_organisation', 'user', 'sig_user'];
         } else {
             $organisations = Organisation::where('id', $currentUser->organisation_id)->get();
-            $roles = ['admin_organisation', 'user'];
+            $roles = ['admin_organisation', 'user', 'sig_user'];
         }
 
         return view('admin.users.edit', compact('user', 'organisations', 'roles'));
@@ -146,7 +146,7 @@ class UserController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
             'phone' => ['nullable', 'string', 'max:20'],
-            'role' => ['required', Rule::in(['super_admin', 'admin_organisation', 'user'])],
+            'role' => ['required', Rule::in(['super_admin', 'admin_organisation', 'user', 'sig_user'])],
         ];
 
         if ($currentUser->isSuperAdmin()) {

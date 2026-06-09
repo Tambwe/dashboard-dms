@@ -56,6 +56,7 @@
                             class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-primary-500 focus:border-primary-500">
                         <option value="">Tous les rôles</option>
                         <option value="user" {{ request('role') == 'user' ? 'selected' : '' }}>Utilisateur</option>
+                        <option value="sig_user" {{ request('role') == 'sig_user' ? 'selected' : '' }}>Utilisateur SIG</option>
                         <option value="admin_organisation" {{ request('role') == 'admin_organisation' ? 'selected' : '' }}>Admin Organisation</option>
                     </select>
                 </div>
@@ -110,6 +111,10 @@
                                 @if($user->role === 'admin_organisation')
                                     <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300">
                                         Admin Org
+                                    </span>
+                                @elseif($user->role === 'sig_user')
+                                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300">
+                                        Utilisateur SIG
                                     </span>
                                 @else
                                     <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">

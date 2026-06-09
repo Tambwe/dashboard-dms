@@ -183,6 +183,7 @@ Route::middleware(['auth', 'check.role:super_admin'])->prefix('admin')->name('ad
 Route::middleware(['auth'])->prefix('my')->name('user.')->group(function () {
     // Sites assignés à l'utilisateur pour la collecte de données
     Route::get('sites', [UserSiteController::class, 'index'])->name('sites.index');
+    Route::get('sites/{site}/geojson', [UserSiteController::class, 'geojson'])->name('sites.geojson');
     Route::get('sites/{site}/edit', [UserSiteController::class, 'edit'])->name('sites.edit');
     Route::put('sites/{site}', [UserSiteController::class, 'update'])->name('sites.update');
     Route::delete('sites/{site}/delete-photo', [UserSiteController::class, 'deletePhoto'])->name('sites.delete-photo');
@@ -310,6 +311,8 @@ Route::middleware(['auth'])->get('/api/sites-par-territoire', function(\Illumina
                 $q->orWhereIn('id', $accessSiteIds);
             }
         });
+    } elseif ($user->isSigUser()) {
+        // Utilisateur SIG : accès à tous les sites
     } else {
         // Utilisateur standard : uniquement les sites qui lui sont attribués (can_collect)
         $query->whereHas('assignedUsers', function ($q) use ($user) {

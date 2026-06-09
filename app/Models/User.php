@@ -74,7 +74,7 @@ class User extends Authenticatable
     public function hasAccessToSite(Site $site): bool
     {
         // Super admin has access to all sites
-        if ($this->isSuperAdmin()) {
+        if ($this->isSuperAdmin() || $this->isSigUser()) {
             return true;
         }
 
@@ -108,6 +108,18 @@ class User extends Authenticatable
     }
 
     /**
+     * Check if user can update site media data (GeoJSON layers and photos).
+     */
+    public function canEditSiteMedia(Site $site): bool
+    {
+        if ($this->isSigUser()) {
+            return $this->hasAccessToSite($site);
+        }
+
+        return $this->canEditSite($site);
+    }
+
+    /**
      * Check if user is super admin.
      */
     public function isSuperAdmin(): bool
@@ -129,6 +141,14 @@ class User extends Authenticatable
     public function isUser(): bool
     {
         return $this->role === 'user';
+    }
+
+    /**
+     * Check if user is SIG user.
+     */
+    public function isSigUser(): bool
+    {
+        return $this->role === 'sig_user';
     }
 
     /**
