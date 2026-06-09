@@ -75,7 +75,7 @@
                 <div>
                     <label class="font-medium text-gray-700 dark:text-gray-300">Date de mise à jour</label>
                     <p class="text-gray-900 dark:text-white">
-                        {{ $site->date_mise_a_jour ? $site->date_mise_a_jour->format('d/m/Y') : '-' }}
+                        {{ $site->date_mise_a_jour ? \Illuminate\Support\Carbon::parse($site->date_mise_a_jour)->format('d/m/Y') : '-' }}
                     </p>
                 </div>
             </div>
@@ -151,28 +151,160 @@
                 Données GeoJSON
             </h3>
 
-            <form method="POST" action="{{ route('organisation.sites.update', $site) }}">
+            <form id="geojsonEditForm" method="POST" action="{{ route('organisation.sites.update', $site) }}">
                 @csrf
                 @method('PUT')
+                <input type="hidden" name="geojson_active_layer" id="geojsonActiveLayerField" value="geojson_layer_ecole">
+
+                @php
+                    $defaultGeojsonData = old('geojson_data');
+                    $defaultLayerFields = [
+                        'geojson_layer_ecole' => old('geojson_layer_ecole'),
+                        'geojson_layer_robinet' => old('geojson_layer_robinet'),
+                        'geojson_layer_lavage_main' => old('geojson_layer_lavage_main'),
+                        'geojson_layer_bloc_sites' => old('geojson_layer_bloc_sites'),
+                        'geojson_layer_centre_sante' => old('geojson_layer_centre_sante'),
+                    ];
+
+                    $layerFieldByKey = [
+                        'ecole' => 'geojson_layer_ecole',
+                        'robinet' => 'geojson_layer_robinet',
+                        'lavage_main' => 'geojson_layer_lavage_main',
+                        'bloc_sites' => 'geojson_layer_bloc_sites',
+                        'centre_sante' => 'geojson_layer_centre_sante',
+                    ];
+
+                    if ($defaultGeojsonData === null && $site->geojson_data) {
+                        if (isset($site->geojson_data['layers']) && is_array($site->geojson_data['layers'])) {
+                            foreach ($site->geojson_data['layers'] as $layerItem) {
+                                if (!is_array($layerItem)) {
+                                    continue;
+                                }
+
+                                $layerKey = (string) ($layerItem['key'] ?? '');
+                                $layerGeojson = $layerItem['geojson'] ?? null;
+                                if (!is_array($layerGeojson)) {
+                                    continue;
+                                }
+
+                                $baseLayerKey = strstr($layerKey, '_', true) ?: $layerKey;
+                                $targetField = $layerFieldByKey[$baseLayerKey] ?? null;
+                                if ($targetField) {
+                                    $defaultLayerFields[$targetField] = json_encode($layerGeojson, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+                                } else {
+                                    $defaultGeojsonData = json_encode($layerGeojson, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+                                }
+                            }
+                        } else {
+                            $defaultGeojsonData = json_encode($site->geojson_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+                        }
+                    }
+                @endphp
                 
                 <div class="mb-4">
-                    <label for="geojson_data" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Données GeoJSON (format JSON valide)
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Couche GeoJSON
                     </label>
-                    <textarea name="geojson_data" 
-                              id="geojson_data" 
-                              rows="8"
-                              placeholder='{"type": "Point", "coordinates": [15.3350623, -4.3250623]}'
-                              class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-primary-500 focus:border-primary-500 font-mono text-sm">{{ old('geojson_data', $site->geojson_data ? json_encode($site->geojson_data, JSON_PRETTY_PRINT) : '') }}</textarea>
+
+                    <div class="geojson-layer-panel hidden rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/50 p-3 space-y-2" data-layer-target="geojson_data">
+                        <div class="flex items-center justify-between gap-2">
+                            <label for="geojson_data" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                GeoJSON
+                            </label>
+                            <div class="flex items-center gap-2">
+                                <button type="button"
+                                        class="geojson-clear-layer rounded-lg border border-red-200 dark:border-red-700 px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30"
+                                        data-clear-target="geojson_data">
+                                    Supprimer cette couche
+                                </button>
+                                <input type="file"
+                                       id="geojsonDataFile"
+                                       data-target="geojson_data"
+                                       accept=".geojson,.json,application/geo+json,application/json"
+                                       class="block w-48 text-xs text-gray-900 dark:text-white border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-white dark:bg-gray-700 focus:outline-none">
+                            </div>
+                        </div>
+                        <textarea name="geojson_data"
+                                  id="geojson_data"
+                                  rows="6"
+                                  placeholder='{"type":"Feature","geometry":{...}}'
+                                  class="geojson-data-input w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-primary-500 focus:border-primary-500 font-mono text-sm">{{ $defaultGeojsonData }}</textarea>
+                    </div>
+
+                    <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/50 p-3 mt-3 space-y-3">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <label for="geojsonLayerPicker" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Edition pas-a-pas: afficher une couche a la fois
+                            </label>
+                            <div class="flex items-center gap-2">
+                                <select id="geojsonLayerPicker" class="rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-white text-sm focus:ring-primary-500 focus:border-primary-500">
+                                    <option value="geojson_layer_ecole">Ecole</option>
+                                    <option value="geojson_layer_robinet">Robinet</option>
+                                    <option value="geojson_layer_lavage_main">Lavage main</option>
+                                    <option value="geojson_layer_bloc_sites">Bloc sites</option>
+                                    <option value="geojson_layer_centre_sante">Centre de sante</option>
+                                    <option value="geojson_data">Autre couche</option>
+                                </select>
+                                <button type="button" id="geojsonNextLayer" class="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
+                                    Couche suivante
+                                </button>
+                            </div>
+                        </div>
+
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                            Chargez et enregistrez chaque couche une par une pour eviter la surcharge du navigateur.
+                        </p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                        <div class="geojson-layer-panel" data-layer-target="geojson_layer_ecole">
+                            <div class="mb-1 flex items-center justify-between gap-2">
+                                <label for="geojson_layer_ecole" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Ecole</label>
+                                <button type="button" class="geojson-clear-layer rounded-lg border border-red-200 dark:border-red-700 px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30" data-clear-target="geojson_layer_ecole">Supprimer cette couche</button>
+                            </div>
+                            <textarea name="geojson_layer_ecole" id="geojson_layer_ecole" rows="5" placeholder='{"type":"Feature","geometry":{...}}' class="geojson-data-input w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-primary-500 focus:border-primary-500 font-mono text-sm">{{ $defaultLayerFields['geojson_layer_ecole'] }}</textarea>
+                        </div>
+                        <div class="geojson-layer-panel hidden" data-layer-target="geojson_layer_robinet">
+                            <div class="mb-1 flex items-center justify-between gap-2">
+                                <label for="geojson_layer_robinet" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Robinet</label>
+                                <button type="button" class="geojson-clear-layer rounded-lg border border-red-200 dark:border-red-700 px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30" data-clear-target="geojson_layer_robinet">Supprimer cette couche</button>
+                            </div>
+                            <textarea name="geojson_layer_robinet" id="geojson_layer_robinet" rows="5" placeholder='{"type":"Feature","geometry":{...}}' class="geojson-data-input w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-primary-500 focus:border-primary-500 font-mono text-sm">{{ $defaultLayerFields['geojson_layer_robinet'] }}</textarea>
+                        </div>
+                        <div class="geojson-layer-panel hidden" data-layer-target="geojson_layer_lavage_main">
+                            <div class="mb-1 flex items-center justify-between gap-2">
+                                <label for="geojson_layer_lavage_main" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Lavage main</label>
+                                <button type="button" class="geojson-clear-layer rounded-lg border border-red-200 dark:border-red-700 px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30" data-clear-target="geojson_layer_lavage_main">Supprimer cette couche</button>
+                            </div>
+                            <textarea name="geojson_layer_lavage_main" id="geojson_layer_lavage_main" rows="5" placeholder='{"type":"Feature","geometry":{...}}' class="geojson-data-input w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-primary-500 focus:border-primary-500 font-mono text-sm">{{ $defaultLayerFields['geojson_layer_lavage_main'] }}</textarea>
+                        </div>
+                        <div class="geojson-layer-panel hidden" data-layer-target="geojson_layer_bloc_sites">
+                            <div class="mb-1 flex items-center justify-between gap-2">
+                                <label for="geojson_layer_bloc_sites" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Bloc sites</label>
+                                <button type="button" class="geojson-clear-layer rounded-lg border border-red-200 dark:border-red-700 px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30" data-clear-target="geojson_layer_bloc_sites">Supprimer cette couche</button>
+                            </div>
+                            <textarea name="geojson_layer_bloc_sites" id="geojson_layer_bloc_sites" rows="5" placeholder='{"type":"Feature","geometry":{...}}' class="geojson-data-input w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-primary-500 focus:border-primary-500 font-mono text-sm">{{ $defaultLayerFields['geojson_layer_bloc_sites'] }}</textarea>
+                        </div>
+                        <div class="geojson-layer-panel hidden md:col-span-2" data-layer-target="geojson_layer_centre_sante">
+                            <div class="mb-1 flex items-center justify-between gap-2">
+                                <label for="geojson_layer_centre_sante" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Centre de sante</label>
+                                <button type="button" class="geojson-clear-layer rounded-lg border border-red-200 dark:border-red-700 px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30" data-clear-target="geojson_layer_centre_sante">Supprimer cette couche</button>
+                            </div>
+                            <textarea name="geojson_layer_centre_sante" id="geojson_layer_centre_sante" rows="5" placeholder='{"type":"Feature","geometry":{...}}' class="geojson-data-input w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-primary-500 focus:border-primary-500 font-mono text-sm">{{ $defaultLayerFields['geojson_layer_centre_sante'] }}</textarea>
+                        </div>
+                    </div>
+
                     <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Format GeoJSON standard. 
+                        Vous pouvez enregistrer plusieurs couches GeoJSON (Ecole, Robinet, Lavage main, Bloc sites, Centre de sante) et les superposer dans la cartographie.
+                        <br>
+                        Format GeoJSON standard.
                         <a href="https://geojson.org/" target="_blank" class="text-primary-600 hover:text-primary-700">Voir la documentation</a>
                     </p>
                 </div>
 
                 <button type="submit" 
                         class="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors">
-                    Enregistrer les données GeoJSON
+                    Enregistrer la couche GeoJSON
                 </button>
             </form>
         </div>
@@ -246,17 +378,163 @@
 </div>
 
 <script>
-// Validation du GeoJSON avant soumission
+const geojsonLayerPicker = document.getElementById('geojsonLayerPicker');
+const geojsonNextLayer = document.getElementById('geojsonNextLayer');
+const geojsonLayerPanels = Array.from(document.querySelectorAll('.geojson-layer-panel'));
+const geojsonInputs = Array.from(document.querySelectorAll('.geojson-data-input'));
+const geojsonActiveLayerField = document.getElementById('geojsonActiveLayerField');
+const geojsonEditForm = document.getElementById('geojsonEditForm');
+
+// Reduce rendering overhead for very large GeoJSON text payloads.
+geojsonInputs.forEach(input => {
+    input.setAttribute('spellcheck', 'false');
+    input.setAttribute('autocapitalize', 'off');
+    input.setAttribute('autocomplete', 'off');
+    input.setAttribute('autocorrect', 'off');
+    input.setAttribute('wrap', 'off');
+});
+
+function showGeojsonLayerPanel(targetId) {
+    geojsonLayerPanels.forEach(panel => {
+        const panelTarget = panel.dataset.layerTarget || '';
+        if (panelTarget === targetId) {
+            panel.classList.remove('hidden');
+        } else {
+            panel.classList.add('hidden');
+        }
+    });
+
+    if (geojsonLayerPicker) {
+        geojsonLayerPicker.value = targetId;
+    }
+
+    if (geojsonActiveLayerField) {
+        geojsonActiveLayerField.value = targetId;
+    }
+
+    if (geojsonActiveLayerField) {
+        geojsonActiveLayerField.value = targetId;
+    }
+}
+
+geojsonLayerPicker?.addEventListener('change', function() {
+    showGeojsonLayerPanel(this.value || 'geojson_layer_ecole');
+});
+
+geojsonNextLayer?.addEventListener('click', function() {
+    if (!geojsonLayerPicker) {
+        return;
+    }
+
+    const options = Array.from(geojsonLayerPicker.options);
+    const currentIndex = Math.max(0, geojsonLayerPicker.selectedIndex);
+    const nextIndex = (currentIndex + 1) % options.length;
+    geojsonLayerPicker.selectedIndex = nextIndex;
+    showGeojsonLayerPanel(options[nextIndex].value);
+});
+
+showGeojsonLayerPanel('geojson_layer_ecole');
+
 document.querySelectorAll('form').forEach(form => {
     form.addEventListener('submit', function(e) {
-        const geojsonInput = this.querySelector('#geojson_data');
-        
-        if (geojsonInput && geojsonInput.value.trim() !== '') {
+        const geojsonInputs = this.querySelectorAll('.geojson-data-input');
+        const activeField = geojsonActiveLayerField ? geojsonActiveLayerField.value : '';
+
+        if (geojsonInputs.length) {
+            geojsonInputs.forEach(input => {
+                input.disabled = !activeField || input.id !== activeField;
+            });
+        }
+
+        if (!geojsonInputs.length) {
+            return;
+        }
+
+        for (let i = 0; i < geojsonInputs.length; i++) {
+            const input = geojsonInputs[i];
+
+            if (input.disabled) {
+                continue;
+            }
+
+            if (input.value.trim() === '') {
+                continue;
+            }
+
             try {
-                JSON.parse(geojsonInput.value);
+                JSON.parse(input.value);
             } catch (error) {
                 e.preventDefault();
-                alert('Le format GeoJSON n\'est pas valide. Veuillez vérifier votre saisie.');
+                showGeojsonLayerPanel(input.id);
+                alert('Le format GeoJSON n\'est pas valide.');
+                input.focus();
+                break;
+            }
+        }
+
+    });
+});
+
+document.querySelectorAll('input[type="file"][data-target]').forEach(fileInput => {
+    fileInput.addEventListener('change', function(event) {
+        const file = event.target.files && event.target.files[0] ? event.target.files[0] : null;
+        const targetId = this.dataset.target;
+        const editor = targetId ? document.getElementById(targetId) : null;
+
+        if (!file || !editor) {
+            return;
+        }
+
+        const reader = new FileReader();
+
+        reader.onload = function() {
+            const content = typeof reader.result === 'string' ? reader.result : '';
+
+            if (!content.trim()) {
+                alert('Le fichier GeoJSON est vide.');
+                return;
+            }
+
+            editor.value = content;
+        };
+
+        reader.onerror = function() {
+            alert('Impossible de lire le fichier GeoJSON.');
+        };
+
+        reader.readAsText(file);
+    });
+});
+
+document.querySelectorAll('.geojson-clear-layer[data-clear-target]').forEach(button => {
+    button.addEventListener('click', async function() {
+        const targetId = this.dataset.clearTarget;
+        const editor = targetId ? document.getElementById(targetId) : null;
+        if (!editor) {
+            return;
+        }
+
+        const confirmed = await window.swalConfirm('Supprimer les donnees de cette couche ?', {
+            title: 'Suppression de donnees',
+            confirmButtonText: 'Supprimer',
+            icon: 'warning'
+        });
+        if (!confirmed) {
+            return;
+        }
+
+        editor.value = '';
+        showGeojsonLayerPanel(targetId);
+        const fileInput = document.querySelector(`input[type="file"][data-target="${targetId}"]`);
+        if (fileInput) {
+            fileInput.value = '';
+        }
+
+        if (geojsonEditForm) {
+            if (typeof geojsonEditForm.requestSubmit === 'function') {
+                geojsonEditForm.requestSubmit();
+            } else {
+                geojsonEditForm.submit();
             }
         }
     });

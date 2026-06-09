@@ -990,7 +990,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     layerButtons.forEach(function(layerButton) {
-        layerButton.addEventListener('click', function() {
+        layerButton.addEventListener('click', async function() {
             const action = this.dataset.action || 'view';
             syncCurrentLayer(this);
 
@@ -1002,7 +1002,11 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             if (action === 'delete') {
-                const confirmed = window.confirm(`Supprimer completement la couche "${currentLayerLabel}" ?`);
+                const confirmed = await window.swalConfirm(`Supprimer completement la couche "${currentLayerLabel}" ?`, {
+                    title: 'Suppression de couche',
+                    confirmButtonText: 'Supprimer',
+                    icon: 'warning'
+                });
                 if (confirmed) {
                     submitGeojsonDeletion(currentEditorTarget);
                 }
@@ -1087,14 +1091,18 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.querySelectorAll('.geojson-clear-layer[data-clear-target]').forEach(button => {
-        button.addEventListener('click', function() {
+        button.addEventListener('click', async function() {
             const targetId = this.dataset.clearTarget;
             const editor = targetId ? document.getElementById(targetId) : null;
             if (!editor) {
                 return;
             }
 
-            const confirmed = window.confirm('Supprimer les donnees de cette couche ?');
+            const confirmed = await window.swalConfirm('Supprimer les donnees de cette couche ?', {
+                title: 'Suppression de donnees',
+                confirmButtonText: 'Supprimer',
+                icon: 'warning'
+            });
             if (!confirmed) {
                 return;
             }
