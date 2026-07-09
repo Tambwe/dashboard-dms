@@ -12,7 +12,7 @@ RUN npm run build
 FROM composer:2 AS composer_build
 WORKDIR /app
 COPY composer.json composer.lock* ./
-RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --ignore-platform-req=ext-gd
+RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --ignore-platform-req=ext-gd --no-scripts
 
 FROM php:8.3-apache
 WORKDIR /var/www/html
