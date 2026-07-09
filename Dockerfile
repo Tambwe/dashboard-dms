@@ -12,7 +12,7 @@ RUN npm run build
 FROM composer:2 AS composer_build
 WORKDIR /app
 COPY composer.json composer.lock* ./
-RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --ignore-platform-req=ext-gd
 
 FROM php:8.3-apache
 WORKDIR /var/www/html
@@ -22,10 +22,14 @@ RUN apt-get update && apt-get install -y \
     unzip \
     libpq-dev \
     libzip-dev \
+    libpng-dev \
+    libjpeg62-turbo-dev \
+    libfreetype6-dev \
     libonig-dev \
     libicu-dev \
     libxml2-dev \
-    && docker-php-ext-install pdo pdo_mysql pdo_pgsql zip intl \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install pdo pdo_mysql pdo_pgsql zip intl gd \
     && a2enmod rewrite \
     && rm -rf /var/lib/apt/lists/*
 
