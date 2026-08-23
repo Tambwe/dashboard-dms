@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "DMS Mobile Collector",
+    "slug": "dms-mobile-collector",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "platforms": ["ios", "android"],
+    "updates": { "fallbackToCacheTimeout": 0 },
+    "assetBundlePatterns": ["**/*"],
+    "ios": { "supportsTablet": true },
+    "android": { "package": "com.dms.mobilecollector" }
+  }
+}

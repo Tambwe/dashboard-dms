@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Symfony\Component\HttpFoundation\Response;
 
 class CheckRole
@@ -22,17 +23,32 @@ class CheckRole
 
         $user = auth()->user();
 
-        // Vérifier si l'utilisateur est actif
-        if (!$user->is_active) {
+        // Vérifier si l'utilisateur est actif quand la colonne existe
+        if (Schema::hasColumn('users', 'is_active') && !$user->is_active) {
             auth()->logout();
             return redirect()->route('login')->with('error', 'Votre compte est désactivé.');
         }
 
         // Vérifier si l'utilisateur a l'un des rôles autorisés
-        if (!in_array($user->role, $roles)) {
+        if (!$this->userHasAllowedRole($user, $roles)) {
             abort(403, 'Accès non autorisé.');
         }
 
         return $next($request);
+    }
+
+    private function userHasAllowedRole($user, array $roles): bool
+    {
+        $userRole = Schema::hasColumn('users', 'role') ? ($user->role ?? null) : null;
+        if ($userRole && in_array($userRole, $roles, true)) {
+            return true;
+        }
+
+        // Compatibilité: compte superadmin seedé même si role est nul/inexistant.
+        if (in_array('super_admin', $roles, true) && strcasecmp((string) ($user->email ?? ''), 'superadmin@dms-cccm.org') === 0) {
+            return true;
+        }
+
+        return false;
     }
 }

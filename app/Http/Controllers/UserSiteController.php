@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\OssatReport;
+use App\Models\SiteGeography;
 use App\Models\Site;
-use App\Models\SiteMouvementPopulation;
+use App\Services\SitePopulationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\MessageBag;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
@@ -22,13 +24,13 @@ class UserSiteController extends Controller
         $user = auth()->user();
 
         if ($user->isSuperAdmin() || $user->isSigUser()) {
-            $query = Site::query()->with(['typeSite', 'commune', 'categorieSite', 'organisation']);
+            $query = Site::query()->with(['typeSite', 'commune', 'categorieSite', 'organisation', 'mouvementsPopulationValides']);
         } else {
         
             // Si l'utilisateur n'a pas d'organisation et n'est pas super admin
             if (!$user->organisation_id && !$user->isSuperAdmin()) {
                 // Récupérer uniquement les sites assignés
-                $query = $user->assignedSites()->with(['typeSite', 'commune', 'categorieSite', 'organisation']);
+                $query = $user->assignedSites()->with(['typeSite', 'commune', 'categorieSite', 'organisation', 'mouvementsPopulationValides']);
             } else {
                 // Sites de l'organisation OU sites assignés
                 $assignedSiteIds = $user->assignedSites()->pluck('sites.id');
@@ -42,13 +44,29 @@ class UserSiteController extends Controller
                             $q->orWhereIn('id', $assignedSiteIds);
                         }
                     })
-                    ->with(['typeSite', 'commune', 'categorieSite', 'organisation']);
+                    ->with(['typeSite', 'commune', 'categorieSite', 'organisation', 'mouvementsPopulationValides']);
             }
         }
 
         // Recherche
         if ($request->filled('search')) {
             $query->where('nom', 'like', '%' . $request->search . '%');
+        }
+
+        if ($request->filled('gps_status')) {
+            if ($request->gps_status === 'missing') {
+                $query->where(function ($gpsQuery) {
+                    $gpsQuery->whereNull('latitude')
+                        ->orWhereNull('longitude')
+                        ->orWhere('latitude', 0)
+                        ->orWhere('longitude', 0);
+                });
+            } elseif ($request->gps_status === 'present') {
+                $query->whereNotNull('latitude')
+                    ->whereNotNull('longitude')
+                    ->where('latitude', '!=', 0)
+                    ->where('longitude', '!=', 0);
+            }
         }
 
         $sites = $query->paginate(20);
@@ -59,6 +77,194 @@ class UserSiteController extends Controller
         }
 
         return view('user.sites.index', compact('sites', 'geojsonLayersMetaBySite'));
+    }
+
+    public function collectedIndex(Request $request)
+    {
+        $query = SiteGeography::query()
+            ->with([
+                'site:id,nom,code_site,province,territoire,zone_sante',
+                'user:id,name',
+                'submission:id,status,synced_at',
+            ])
+            ->orderByDesc('collected_at')
+            ->orderByDesc('id');
+
+        $this->applyCollectedSiteAccessScope($query);
+
+        if ($request->filled('search')) {
+            $search = trim((string) $request->input('search'));
+            $query->where(function ($inner) use ($search) {
+                $inner->where('point_category', 'like', "%{$search}%")
+                    ->orWhere('polygon_category', 'like', "%{$search}%")
+                    ->orWhere('polygon_block_name', 'like', "%{$search}%")
+                    ->orWhereHas('site', function ($siteQuery) use ($search) {
+                        $siteQuery->where('nom', 'like', "%{$search}%")
+                            ->orWhere('code_site', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        if ($request->filled('geometry_type') && in_array($request->input('geometry_type'), ['point', 'polygon'], true)) {
+            $query->where('geometry_type', $request->input('geometry_type'));
+        }
+
+        $geographies = $query->paginate(25)->withQueryString();
+
+        return view('user.sites.collected-index', compact('geographies'));
+    }
+
+    public function showCollected(SiteGeography $siteGeography)
+    {
+        $siteGeography->load([
+            'site:id,nom,code_site,province,territoire,zone_sante',
+            'user:id,name',
+            'submission:id,status,synced_at',
+        ]);
+        $this->assertCanAccessCollectedSite($siteGeography);
+
+        return view('user.sites.collected-show', compact('siteGeography'));
+    }
+
+    public function editCollected(SiteGeography $siteGeography)
+    {
+        $siteGeography->load(['site:id,nom,code_site']);
+        $this->assertCanAccessCollectedSite($siteGeography);
+
+        return view('user.sites.collected-edit', compact('siteGeography'));
+    }
+
+    public function updateCollected(Request $request, SiteGeography $siteGeography)
+    {
+        $this->assertCanAccessCollectedSite($siteGeography);
+
+        $validated = $request->validate([
+            'collected_at' => 'nullable|date',
+            'accuracy_meters' => 'nullable|numeric|min:0',
+            'point_category' => 'nullable|string|max:120',
+            'point_category_other' => 'nullable|string|max:255',
+            'polygon_category' => 'nullable|string|max:120',
+            'polygon_block_name' => 'nullable|string|max:255',
+            'geojson_data' => 'nullable|json',
+        ]);
+
+        $geojsonData = null;
+        if ($request->filled('geojson_data')) {
+            $decoded = json_decode((string) $request->input('geojson_data'), true);
+            if (!is_array($decoded) || !isset($decoded['type'])) {
+                return back()
+                    ->withErrors(['geojson_data' => 'Le GeoJSON est invalide.'])
+                    ->withInput();
+            }
+            $geojsonData = $decoded;
+        } elseif ($request->has('geojson_data')) {
+            $geojsonData = null;
+        } else {
+            $geojsonData = $siteGeography->geojson_data;
+        }
+
+        [$nextGeometryType, $nextLatitude, $nextLongitude] = $this->extractGeometrySummary($geojsonData, $siteGeography);
+
+        $siteGeography->update([
+            'collected_at' => $validated['collected_at'] ?? $siteGeography->collected_at,
+            'accuracy_meters' => $validated['accuracy_meters'] ?? null,
+            'point_category' => $validated['point_category'] ?? null,
+            'point_category_other' => $validated['point_category_other'] ?? null,
+            'polygon_category' => $validated['polygon_category'] ?? null,
+            'polygon_block_name' => $validated['polygon_block_name'] ?? null,
+            'geojson_data' => $geojsonData,
+            'geometry_type' => $nextGeometryType,
+            'latitude' => $nextLatitude,
+            'longitude' => $nextLongitude,
+        ]);
+
+        if ($siteGeography->site) {
+            $siteGeography->site->update([
+                'geojson_data' => $geojsonData,
+                'geometry_type' => $nextGeometryType,
+                'latitude' => $nextLatitude,
+                'longitude' => $nextLongitude,
+                'collection_accuracy_m' => $validated['accuracy_meters'] ?? null,
+                'geometry_collected_at' => $validated['collected_at'] ?? now(),
+                'date_mise_a_jour' => now()->toDateString(),
+            ]);
+        }
+
+        return redirect()
+            ->route('user.sites.collected.show', $siteGeography)
+            ->with('success', 'Géographie synchronisée mise à jour.');
+    }
+
+    public function destroyCollected(SiteGeography $siteGeography)
+    {
+        $this->assertCanAccessCollectedSite($siteGeography);
+
+        DB::transaction(function () use ($siteGeography): void {
+            $siteGeography->delete();
+        });
+
+        return redirect()
+            ->route('user.sites.collected.index')
+            ->with('success', 'Géographie synchronisée supprimée.');
+    }
+
+    /**
+     * Déclare un site fermé à partir d'une date (super admin uniquement).
+     */
+    public function close(Request $request, Site $site)
+    {
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);
+
+        $validated = $request->validate([
+            'date_fermeture' => 'required|date',
+            'raison_fermeture' => 'required|string|max:255',
+            'commentaire_fermeture' => 'required|string',
+            'document_fermeture' => 'nullable|file|mimes:pdf,doc,docx,jpg,jpeg,png|max:10240',
+        ]);
+
+        $documentPath = $site->document_fermeture;
+
+        if ($request->hasFile('document_fermeture')) {
+            if ($documentPath) {
+                Storage::disk('public')->delete($documentPath);
+            }
+
+            $documentPath = $request->file('document_fermeture')->store('sites/closure-documents', 'public');
+        }
+
+        $site->update([
+            'date_fermeture' => $validated['date_fermeture'],
+            'raison_fermeture' => $validated['raison_fermeture'],
+            'commentaire_fermeture' => $validated['commentaire_fermeture'],
+            'document_fermeture' => $documentPath,
+        ]);
+
+        $dateFermeture = $site->date_fermeture
+            ? \Illuminate\Support\Carbon::parse($site->date_fermeture)->format('d/m/Y')
+            : $validated['date_fermeture'];
+
+        return redirect()->route('user.sites.index')->with('success', 'Le site a été déclaré fermé à partir du ' . $dateFermeture . '.');
+    }
+
+    /**
+     * Réouvre un site (retire la date de fermeture) (super admin uniquement).
+     */
+    public function reopen(Site $site)
+    {
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);
+
+        if ($site->document_fermeture) {
+            Storage::disk('public')->delete($site->document_fermeture);
+        }
+
+        $site->update([
+            'date_fermeture' => null,
+            'raison_fermeture' => null,
+            'commentaire_fermeture' => null,
+            'document_fermeture' => null,
+        ]);
+
+        return redirect()->route('user.sites.index')->with('success', 'Le site a été réouvert avec succès.');
     }
 
     /**
@@ -79,17 +285,11 @@ class UserSiteController extends Controller
         $canEditMedia = $user->canEditSiteMedia($site);
 
         // Charger les relations de gestion du site
-        $site->load(['organisation', 'gestionnaire', 'coordinateur']);
+        $site->load(['organisation', 'gestionnaire', 'coordinateur', 'mouvementsPopulationValides']);
 
         $ossatReport = OssatReport::where('site_id', $site->id)->latest('today')->first();
 
-        $populationMouvement = SiteMouvementPopulation::where('site_id', $site->id)
-            ->where('statut', 'valide')
-            ->latest('date_mouvement')
-            ->first()
-            ?? SiteMouvementPopulation::where('site_id', $site->id)
-            ->latest('date_mouvement')
-            ->first();
+        $populationMouvement = app(SitePopulationService::class)->snapshotForSite($site->id);
 
         $geojsonLayersMeta = $this->extractGeojsonLayersMeta($site->geojson_data);
 
@@ -522,6 +722,13 @@ class UserSiteController extends Controller
             abort(403, 'Vous n\'avez pas la permission de modifier ce site.');
         }
 
+        foreach (['longitude', 'latitude'] as $coordinateField) {
+            if ($request->filled($coordinateField)) {
+                $normalizedValue = str_replace(',', '.', (string) $request->input($coordinateField));
+                $request->merge([$coordinateField => $normalizedValue]);
+            }
+        }
+
         $validated = $request->validate([
             'longitude' => 'nullable|numeric|between:-180,180',
             'latitude' => 'nullable|numeric|between:-90,90',
@@ -733,6 +940,112 @@ class UserSiteController extends Controller
 
         return redirect()->route('user.sites.edit', $site)
             ->with('success', 'Site mis à jour avec succès.');
+    }
+
+    private function applyCollectedSiteAccessScope($query): void
+    {
+        $user = auth()->user();
+        if (!$user) {
+            $query->whereRaw('1 = 0');
+            return;
+        }
+
+        if ($user->isSuperAdmin() || $user->isSigUser()) {
+            return;
+        }
+
+        $assignedSiteIds = $user->assignedSites()->pluck('sites.id');
+        if (!$user->organisation_id) {
+            if ($assignedSiteIds->isEmpty()) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->whereIn('site_id', $assignedSiteIds);
+            }
+            return;
+        }
+
+        $accessibleIdsQuery = Site::query()
+            ->select('id')
+            ->where('organisation_id', $user->organisation_id);
+
+        if ($assignedSiteIds->isNotEmpty()) {
+            $accessibleIdsQuery->orWhereIn('id', $assignedSiteIds);
+        }
+
+        $accessibleIds = $accessibleIdsQuery->pluck('id');
+        if ($accessibleIds->isEmpty()) {
+            $query->whereRaw('1 = 0');
+            return;
+        }
+
+        $query->whereIn('site_id', $accessibleIds);
+    }
+
+    private function assertCanAccessCollectedSite(SiteGeography $siteGeography): void
+    {
+        $user = auth()->user();
+        if (!$user) {
+            abort(403);
+        }
+
+        if ($user->isSuperAdmin() || $user->isSigUser()) {
+            return;
+        }
+
+        if (!$siteGeography->site || !$user->hasAccessToSite($siteGeography->site)) {
+            abort(403, 'Vous n\'avez pas accès à cette géographie synchronisée.');
+        }
+    }
+
+    private function extractGeometrySummary($geojsonData, SiteGeography $siteGeography): array
+    {
+        if (!is_array($geojsonData)) {
+            return [
+                $siteGeography->geometry_type,
+                $siteGeography->latitude,
+                $siteGeography->longitude,
+            ];
+        }
+
+        $geometry = $geojsonData['features'][0]['geometry'] ?? null;
+        if (!is_array($geometry)) {
+            return [
+                $siteGeography->geometry_type,
+                $siteGeography->latitude,
+                $siteGeography->longitude,
+            ];
+        }
+
+        $type = strtolower((string) ($geometry['type'] ?? ''));
+        if ($type === 'point') {
+            $coordinates = $geometry['coordinates'] ?? null;
+            if (!is_array($coordinates) || count($coordinates) < 2) {
+                return ['point', $siteGeography->latitude, $siteGeography->longitude];
+            }
+            return [
+                'point',
+                is_numeric($coordinates[1]) ? (float) $coordinates[1] : $siteGeography->latitude,
+                is_numeric($coordinates[0]) ? (float) $coordinates[0] : $siteGeography->longitude,
+            ];
+        }
+
+        if ($type === 'polygon') {
+            $ring = $geometry['coordinates'][0] ?? null;
+            if (!is_array($ring) || !isset($ring[0]) || !is_array($ring[0]) || count($ring[0]) < 2) {
+                return ['polygon', $siteGeography->latitude, $siteGeography->longitude];
+            }
+            return [
+                'polygon',
+                is_numeric($ring[0][1] ?? null) ? (float) $ring[0][1] : $siteGeography->latitude,
+                is_numeric($ring[0][0] ?? null) ? (float) $ring[0][0] : $siteGeography->longitude,
+            ];
+        }
+
+        return [
+            $siteGeography->geometry_type,
+            $siteGeography->latitude,
+            $siteGeography->longitude,
+        ];
     }
 
     private function isValidGeojsonPayload(array $decoded): bool

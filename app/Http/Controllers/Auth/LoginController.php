@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class LoginController extends Controller
@@ -35,8 +36,8 @@ class LoginController extends Controller
         if (Auth::attempt($request->only('email', 'password'), $request->boolean('remember'))) {
             $user = Auth::user();
 
-            // Vérifier si l'utilisateur est actif
-            if (!$user->is_active) {
+            // Vérifier si l'utilisateur est actif seulement si la colonne existe
+            if (Schema::hasColumn('users', 'is_active') && !$user->is_active) {
                 Auth::logout();
                 throw ValidationException::withMessages([
                     'email' => 'Votre compte est désactivé. Contactez l\'administrateur.',
@@ -45,8 +46,8 @@ class LoginController extends Controller
 
             $request->session()->regenerate();
 
-            // Vérifier si l'utilisateur doit changer son mot de passe
-            if ($user->must_change_password) {
+            // Vérifier si l'utilisateur doit changer son mot de passe seulement si la colonne existe
+            if (Schema::hasColumn('users', 'must_change_password') && $user->must_change_password) {
                 return redirect()->route('password.change.show');
             }
 

@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=inter:400,500,600,700&display=swap" rel="stylesheet" />
     <x-vite-manifest-loader :assets="['resources/css/app.css', 'resources/js/app.js']" />
+    <x-sweetalert-flash />
 
     <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet" />
 
@@ -329,6 +330,70 @@
         .visible-sites-table th { position: sticky; top: 0; background: #f8fafc; color: #64748b; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.04em; }
         .visible-sites-empty { padding: 12px 10px; color: #94a3b8; font-size: 0.72rem; font-style: italic; }
 
+        .map-legend-control-mapbox {
+            position: absolute;
+            top: 0.9rem;
+            left: 0.9rem;
+            z-index: 20;
+            min-width: 170px;
+            background: rgba(255,255,255,0.96);
+            border: 1px solid #dbe3ef;
+            border-radius: 10px;
+            box-shadow: 0 8px 20px rgba(15,23,42,0.12);
+            padding: 8px 10px;
+            backdrop-filter: blur(6px);
+        }
+
+        .map-legend-title-mapbox {
+            font-size: 0.66rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #475569;
+            margin-bottom: 6px;
+        }
+
+        .map-legend-item-mapbox {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.67rem;
+            color: #334155;
+            line-height: 1.3;
+            margin-bottom: 4px;
+        }
+
+        .map-legend-item-mapbox:last-child { margin-bottom: 0; }
+
+        .map-legend-swatch-mapbox {
+            width: 16px;
+            height: 3px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+
+        .map-legend-dot-mapbox {
+            width: 9px;
+            height: 9px;
+            border-radius: 999px;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+
+        .map-legend-cluster-mapbox {
+            width: 17px;
+            height: 17px;
+            border-radius: 999px;
+            background: #2563eb;
+            color: #fff;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 8px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
         .print-details { display: none; }
         .print-card-title { font-size: 14px; font-weight: 800; color: #0f172a; margin-bottom: 6px; }
         .print-card-meta { font-size: 11px; color: #475569; margin-bottom: 8px; }
@@ -360,16 +425,19 @@
             #panel { max-height: 44vh; border-right: 0; border-bottom: 1px solid #e2e8f0; }
             #map { height: 56vh; }
             #layerControl { width: 220px; top: 0.55rem; right: 0.55rem; }
+            .map-legend-control-mapbox { top: 0.55rem; left: 0.55rem; min-width: 155px; }
         }
 
-        @page { size: A4 landscape; margin: 1cm; }
+        @page { size: A4 landscape; margin: 0; }
         #print-sites-list-mapbox { display: none; }
         @media print {
-            html, body { height: auto !important; background: #fff !important; }
+            html, body { height: 100% !important; width: 100% !important; margin: 0 !important; padding: 0 !important; background: #fff !important; }
             #topbar, #panel, #layerControl { display: none !important; }
-            #layout { display: block !important; height: auto !important; }
-            #mapWrap, #map { height: 100vh !important; width: 100% !important; position: relative !important; }
+            #layout { display: block !important; position: fixed !important; inset: 0 !important; height: 100% !important; width: 100% !important; overflow: hidden !important; }
+            #mapWrap { position: fixed !important; inset: 0 !important; height: 100% !important; width: 100% !important; margin: 0 !important; padding: 0 !important; }
+            #map { position: absolute !important; inset: 0 !important; height: 100% !important; width: 100% !important; }
             .visible-sites-panel { display: none !important; }
+            .map-legend-control-mapbox { display: none !important; }
             .mapboxgl-ctrl-top-right,
             .mapboxgl-ctrl-bottom-right,
             .mapboxgl-ctrl-logo,
@@ -395,6 +463,16 @@
             <a href="{{ url('/profil-site') }}" style="font-size:0.85rem;color:#475569;text-decoration:none;">Profil des sites</a>
             <a href="{{ url('/cartographie') }}" style="font-size:0.85rem;color:#475569;text-decoration:none;">Cartographie Leaflet</a>
             <a href="{{ url('/cartographie-mapbox') }}" style="font-size:0.85rem;color:#2563eb;text-decoration:none;font-weight:600;">Cartographie Mapbox</a>
+            <select id="printFormatMapbox" title="Format impression" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:0.72rem;font-weight:600;">
+                <option value="A1 landscape">A1 paysage</option>
+                <option value="A1 portrait">A1 portrait</option>
+                <option value="A2 landscape">A2 paysage</option>
+                <option value="A2 portrait">A2 portrait</option>
+                <option value="A3 landscape">A3 paysage</option>
+                <option value="A3 portrait">A3 portrait</option>
+                <option value="A4 landscape" selected>A4 paysage</option>
+                <option value="A4 portrait">A4 portrait</option>
+            </select>
             <button id="btnPrintMap" type="button" style="padding:6px 10px;background:#2563eb;border:none;border-radius:8px;cursor:pointer;color:#fff;font-size:0.75rem;font-weight:600;">🖨️ Imprimer</button>
         </nav>
     </header>
@@ -466,6 +544,15 @@
         <div id="mapWrap">
             <div id="map"></div>
             <div id="printDetailsMap" class="print-details"></div>
+            <div id="mapLegendControlMapbox" class="map-legend-control-mapbox">
+                <div class="map-legend-title-mapbox">Legende</div>
+                <div class="map-legend-item-mapbox"><span class="map-legend-dot-mapbox" style="background:#3b82f6"></span>Site (marqueur)</div>
+                <div class="map-legend-item-mapbox"><span class="map-legend-cluster-mapbox">N</span>Cluster de sites</div>
+                <div class="map-legend-item-mapbox"><span class="map-legend-swatch-mapbox" style="background:#dc2626"></span>Limite province</div>
+                <div class="map-legend-item-mapbox"><span class="map-legend-swatch-mapbox" style="background:#d97706"></span>Limite territoire</div>
+                <div class="map-legend-item-mapbox"><span class="map-legend-swatch-mapbox" style="background:#7c3aed"></span>Zone de sante</div>
+                <div class="map-legend-item-mapbox"><span class="map-legend-swatch-mapbox" style="background:#0f766e"></span>Couche RHO ACF</div>
+            </div>
             <div class="visible-sites-panel" id="visibleSitesPanelMapbox">
                 <div class="visible-sites-head">
                     <span>Sites visibles sur la carte</span>
@@ -510,6 +597,7 @@
                     <label class="layer-item"><input type="checkbox" id="layerAdmin1" checked> <span class="layer-line" style="background:#dc2626"></span> Provinces</label>
                     <label class="layer-item"><input type="checkbox" id="layerAdmin2"> <span class="layer-line" style="background:#d97706"></span> Territoires</label>
                     <label class="layer-item"><input type="checkbox" id="layerAdmin3"> <span class="layer-line" style="background:#7c3aed"></span> Zones de santé</label>
+                    <label class="layer-item"><input type="checkbox" id="layerRhoAcf"> <span class="layer-line" style="background:#0f766e"></span> RHO ACF</label>
                 </div>
 
                 <div class="focus-legend">
@@ -549,6 +637,7 @@
             var listCountBadge = document.getElementById('listCountBadge');
             var sitesListWrap = document.getElementById('sitesListWrap');
             var mapError = document.getElementById('mapError');
+            var printFormatSelect = document.getElementById('printFormatMapbox');
             var layerClustersCheckbox = document.getElementById('layerClusters');
             var layerPointsCheckbox = document.getElementById('layerPoints');
             var layerPolygonsPdiCheckbox = document.getElementById('layerPolygonsPdi');
@@ -842,6 +931,134 @@
                 return null;
             }
 
+            var sourceBoundsCache = {};
+
+            function getBoundsFromGeojsonPayload(payload) {
+                if (!payload || typeof payload !== 'object') return null;
+
+                var bounds = new mapboxgl.LngLatBounds();
+                var pushGeometry = function(geometry) {
+                    if (geometry && geometry.coordinates) {
+                        extendBoundsWithCoordinates(bounds, geometry.coordinates);
+                    }
+                };
+
+                if (payload.type === 'FeatureCollection' && Array.isArray(payload.features)) {
+                    payload.features.forEach(function(feature) {
+                        if (feature && feature.geometry) {
+                            pushGeometry(feature.geometry);
+                        }
+                    });
+                } else if (payload.type === 'Feature' && payload.geometry) {
+                    pushGeometry(payload.geometry);
+                } else {
+                    pushGeometry(payload);
+                }
+
+                if (!bounds.isEmpty()) {
+                    return bounds;
+                }
+
+                return null;
+            }
+
+            function getSourceUrlById(sourceId) {
+                var source = map.getSource(sourceId);
+                if (source && typeof source._data === 'string') {
+                    return source._data;
+                }
+
+                var known = {
+                    'cod-admin0': '/geojson/cod_admin0.geojson',
+                    'cod-admin1': '/geojson/cod_admin1.geojson',
+                    'cod-admin2': '/geojson/cod_admin2.geojson',
+                    'cod-admin3': '/geojson/cod_admin3.geojson',
+                    'rho-acf': '/geojson/BD_Rho_ACF_combined_EPSG4326.geojson'
+                };
+                return known[sourceId] || null;
+            }
+
+            function getSourceBounds(sourceId) {
+                if (sourceBoundsCache[sourceId]) {
+                    return Promise.resolve(sourceBoundsCache[sourceId]);
+                }
+
+                var source = map.getSource(sourceId);
+                if (source && source._data && typeof source._data === 'object') {
+                    var inMemoryBounds = getBoundsFromGeojsonPayload(source._data);
+                    if (inMemoryBounds) {
+                        sourceBoundsCache[sourceId] = inMemoryBounds;
+                        return Promise.resolve(inMemoryBounds);
+                    }
+                }
+
+                var sourceUrl = getSourceUrlById(sourceId);
+                if (!sourceUrl) {
+                    return Promise.resolve(null);
+                }
+
+                return fetch(sourceUrl)
+                    .then(function(response) {
+                        if (!response.ok) {
+                            throw new Error('HTTP ' + response.status);
+                        }
+                        return response.json();
+                    })
+                    .then(function(data) {
+                        var fetchedBounds = getBoundsFromGeojsonPayload(data);
+                        if (fetchedBounds) {
+                            sourceBoundsCache[sourceId] = fetchedBounds;
+                        }
+                        return fetchedBounds;
+                    })
+                    .catch(function() {
+                        return null;
+                    });
+            }
+
+            function zoomToBounds(bounds, maxZoom) {
+                if (!bounds || bounds.isEmpty()) return;
+
+                var sw = bounds.getSouthWest();
+                var ne = bounds.getNorthEast();
+                if (sw.lng === ne.lng && sw.lat === ne.lat) {
+                    map.easeTo({ center: [sw.lng, sw.lat], zoom: Math.max(map.getZoom(), Math.min(maxZoom || 12, 13)), duration: 380 });
+                    return;
+                }
+
+                map.fitBounds(bounds, { padding: 70, duration: 450, maxZoom: maxZoom || 12 });
+            }
+
+            function zoomToSource(sourceId, maxZoom) {
+                getSourceBounds(sourceId).then(function(bounds) {
+                    zoomToBounds(bounds, maxZoom);
+                });
+            }
+
+            function getFilteredSitesBounds() {
+                var bounds = new mapboxgl.LngLatBounds();
+
+                currentFilteredSites.forEach(function(site) {
+                    var lat = parseFloat(site.latitude);
+                    var lng = parseFloat(site.longitude);
+                    if (isFinite(lat) && isFinite(lng)) {
+                        bounds.extend([lng, lat]);
+                    }
+
+                    var polygonBounds = getSitePolygonBounds(site);
+                    if (polygonBounds && !polygonBounds.isEmpty()) {
+                        bounds.extend(polygonBounds.getSouthWest());
+                        bounds.extend(polygonBounds.getNorthEast());
+                    }
+                });
+
+                if (!bounds.isEmpty()) {
+                    return bounds;
+                }
+
+                return null;
+            }
+
             function buildBoundsPolygonFromPoints(features) {
                 if (!Array.isArray(features) || !features.length) return null;
 
@@ -971,15 +1188,45 @@
                 return n.toLocaleString('fr-FR');
             }
 
-            function makePopupHtml(feature) {
+            function makePopupHtml(feature, context) {
                 var p = feature.properties;
+                var geometryType = feature && feature.geometry && feature.geometry.type ? feature.geometry.type : 'Inconnu';
                 var profileUrl = '/profil-site/' + encodeURIComponent(String(p.id || ''));
+                var skipKeys = {
+                    id: true,
+                    name: true,
+                    code: true,
+                    province: true,
+                    territoire: true,
+                    zone_sante: true,
+                    category: true,
+                    menages: true,
+                    individus: true,
+                    marker_icon: true
+                };
+
+                var attrs = Object.keys(p || {})
+                    .filter(function(key) {
+                        if (skipKeys[key]) return false;
+                        var value = p[key];
+                        return value !== null && value !== undefined && String(value).trim() !== '';
+                    })
+                    .slice(0, 6)
+                    .map(function(key) {
+                        return '<div style="font-size:11px;color:#475569;"><strong>' + esc(key) + ':</strong> ' + esc(p[key]) + '</div>';
+                    })
+                    .join('');
+
                 return '<div style="font-family:Inter,sans-serif;font-size:12px;line-height:1.4;">'
                     + '<strong style="font-size:13px;">' + esc(p.name) + '</strong><br>'
+                    + (context && context.layerName ? '<span>Couche: ' + esc(context.layerName) + '</span><br>' : '')
                     + '<span>' + esc(p.province) + ' / ' + esc(p.territoire) + '</span><br>'
                     + '<span>Zone: ' + esc(p.zone_sante) + '</span><br>'
                     + '<span>Catégorie: ' + esc(p.category) + '</span><br>'
+                    + '<span>Code site: ' + esc(p.code || '-') + '</span><br>'
+                    + '<span>Type géométrie: ' + esc(geometryType) + '</span><br>'
                     + '<span>Ménages: ' + fmt(p.menages) + ' · Individus: ' + fmt(p.individus) + '</span><br>'
+                    + (attrs ? '<div style="margin-top:4px"><strong>Attributs:</strong>' + attrs + '</div>' : '')
                     + '<a href="' + profileUrl + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" style="display:inline-block;margin-top:6px;padding:4px 8px;background:#2563eb;color:#fff;border-radius:6px;text-decoration:none;font-size:11px;font-weight:600;">Voir le profil du site</a>'
                     + '</div>';
             }
@@ -1010,6 +1257,7 @@
                     var p = feature.properties;
                     var card = document.createElement('div');
                     card.className = 'site-card';
+                    card._site = site;
                     card.innerHTML =
                         '<div class="site-name">' + esc(p.name) + '</div>'
                         + '<div class="site-geo">' + esc(p.province) + ' / ' + esc(p.territoire) + ' / ' + esc(p.zone_sante) + '</div>'
@@ -1079,8 +1327,12 @@
                 fetch(buildUrl())
                     .then(function(r) { return r.json(); })
                     .then(function(data) {
-                        populateZoneAndSiteOptions(data);
-                        allSites = Array.isArray(data) ? data : [];
+                        var sites = Array.isArray(data)
+                            ? data
+                            : (Array.isArray(data && data.sites) ? data.sites : []);
+
+                        populateZoneAndSiteOptions(sites);
+                        allSites = sites;
                         renderFeatures();
                     })
                     .catch(function(err) {
@@ -1114,13 +1366,93 @@
                 return select.options[select.selectedIndex] ? select.options[select.selectedIndex].textContent.trim() : fallback;
             }
 
+            function getSelectedPrintSite() {
+                if (activeSiteCard && activeSiteCard._site) return activeSiteCard._site;
+                if (siteSelect && siteSelect.value) {
+                    var selectedId = String(siteSelect.value);
+                    var selectedSite = allSites.find(function(site) { return String(site.id) === selectedId; });
+                    if (selectedSite) return selectedSite;
+                }
+                if (currentFilteredSites.length === 1) return currentFilteredSites[0];
+                return null;
+            }
+
             function getVisibleAdminLayerNames() {
                 var names = [];
                 if (document.getElementById('layerAdmin1').checked) names.push('Provinces');
                 if (document.getElementById('layerAdmin2').checked) names.push('Territoires');
                 if (document.getElementById('layerAdmin3').checked) names.push('Zones de sante');
+                if (document.getElementById('layerRhoAcf').checked) names.push('RHO ACF');
                 if (document.getElementById('layerAdmin0').checked) names.push('Pays');
                 return names.length ? names.join(', ') : 'Aucune';
+            }
+
+            var printRestoreState = null;
+
+            function applyPrintPageSize() {
+                var selected = printFormatSelect && printFormatSelect.value ? printFormatSelect.value : 'A4 landscape';
+                var style = document.getElementById('print-page-style-mapbox');
+                if (!style) {
+                    style = document.createElement('style');
+                    style.id = 'print-page-style-mapbox';
+                    document.head.appendChild(style);
+                }
+                style.textContent = '@page { size: ' + selected + '; margin: 0; }';
+            }
+
+            function prepareMapForPrint() {
+                if (!map || typeof map.getCenter !== 'function') return;
+
+                printRestoreState = {
+                    center: map.getCenter(),
+                    zoom: map.getZoom(),
+                    bearing: map.getBearing(),
+                    pitch: map.getPitch()
+                };
+
+                var selectedSite = getSelectedPrintSite();
+                var bounds = new mapboxgl.LngLatBounds();
+
+                if (selectedSite) {
+                    var lat = parseFloat(selectedSite.latitude);
+                    var lng = parseFloat(selectedSite.longitude);
+                    if (isFinite(lat) && isFinite(lng)) {
+                        bounds.extend([lng, lat]);
+                    }
+                } else {
+                    currentFilteredSites.forEach(function(site) {
+                        var lat = parseFloat(site.latitude);
+                        var lng = parseFloat(site.longitude);
+                        if (isFinite(lat) && isFinite(lng)) {
+                            bounds.extend([lng, lat]);
+                        }
+                    });
+                }
+
+                if (!bounds.isEmpty()) {
+                    var sw = bounds.getSouthWest();
+                    var ne = bounds.getNorthEast();
+                    if (sw.lng === ne.lng && sw.lat === ne.lat) {
+                        map.easeTo({ center: [sw.lng, sw.lat], zoom: Math.max(map.getZoom(), 12), duration: 0 });
+                    } else {
+                        map.fitBounds(bounds, { padding: 80, maxZoom: 12, duration: 0 });
+                    }
+                }
+
+                map.resize();
+            }
+
+            function restoreMapAfterPrint() {
+                if (!printRestoreState) return;
+                map.easeTo({
+                    center: printRestoreState.center,
+                    zoom: printRestoreState.zoom,
+                    bearing: printRestoreState.bearing,
+                    pitch: printRestoreState.pitch,
+                    duration: 0
+                });
+                map.resize();
+                printRestoreState = null;
             }
 
             function updatePrintDetails() {
@@ -1128,6 +1460,7 @@
                 if (!printBox) return;
 
                 var activeBasemap = document.querySelector('.basemap-btn.active');
+                var selectedSite = getSelectedPrintSite();
                 var lines = [];
                 lines.push('<div class="print-card-title">Cartographie des sites - Mapbox</div>');
                 lines.push('<div class="print-card-meta">Imprime le ' + new Date().toLocaleString('fr-FR') + '</div>');
@@ -1140,13 +1473,24 @@
                 lines.push('<div class="print-card-line"><strong>Categorie :</strong> ' + esc(getSelectedText(categorieSelect, 'Toutes')) + '</div>');
                 lines.push('<div class="print-card-line"><strong>Fond :</strong> ' + esc(activeBasemap ? activeBasemap.textContent.trim() : 'Inconnu') + '</div>');
                 lines.push('<div class="print-card-line"><strong>Limites visibles :</strong> ' + esc(getVisibleAdminLayerNames()) + '</div>');
+                if (selectedSite) {
+                    lines.push('<div class="print-card-line"><strong>Site sélectionné :</strong> ' + esc(selectedSite.nom || '-') + '</div>');
+                    lines.push('<div class="print-card-line"><strong>Code :</strong> ' + esc(selectedSite.code_site || selectedSite.code || '-') + '</div>');
+                    lines.push('<div class="print-card-line"><strong>Localisation :</strong> ' + esc((selectedSite.province || '-') + ' / ' + (selectedSite.territoire || '-') + ' / ' + (selectedSite.zone_sante || '-')) + '</div>');
+                    lines.push('<div class="print-card-line"><strong>Catégorie :</strong> ' + esc((selectedSite.categorie_site && selectedSite.categorie_site.name) || '-') + '</div>');
+                    lines.push('<div class="print-card-line"><strong>Coordonnées :</strong> ' + esc((selectedSite.latitude || '-') + ', ' + (selectedSite.longitude || '-')) + '</div>');
+                    lines.push('<div class="print-card-line"><strong>Ménages :</strong> ' + esc(selectedSite.menages ? Number(selectedSite.menages).toLocaleString('fr-FR') : '-') + ' <strong style="margin-left:8px;">Individus :</strong> ' + esc(selectedSite.individus ? Number(selectedSite.individus).toLocaleString('fr-FR') : '-') + '</div>');
+                    lines.push('<div class="print-card-line"><strong>Couche thématique :</strong> ' + (selectedSite.geojson_data ? 'Oui' : 'Non') + '</div>');
+                } else {
+                    lines.push('<div class="print-card-line"><strong>Site sélectionné :</strong> Aucun</div>');
+                }
                 printBox.innerHTML = lines.join('');
 
                 // Remplir la liste des sites
                 var tbody = document.getElementById('print-sites-tbody-mapbox');
                 if (tbody) {
                     tbody.innerHTML = '';
-                    var sites = currentFilteredSites;
+                    var sites = selectedSite ? [selectedSite] : currentFilteredSites;
                     if (!sites || !sites.length) {
                         tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#94a3b8">Aucun site</td></tr>';
                     } else {
@@ -1171,29 +1515,44 @@
                 layerClustersCheckbox.addEventListener('change', function() {
                     setLayerVisibility('clusters', layerClustersCheckbox.checked);
                     setLayerVisibility('cluster-count', layerClustersCheckbox.checked);
+                    if (layerClustersCheckbox.checked) {
+                        zoomToBounds(getFilteredSitesBounds(), 12);
+                    }
                 });
 
                 layerPointsCheckbox.addEventListener('change', function() {
                     setLayerVisibility('unclustered-point', layerPointsCheckbox.checked);
                     setLayerVisibility('unclustered-point-icon', layerPointsCheckbox.checked);
+                    if (layerPointsCheckbox.checked) {
+                        zoomToBounds(getFilteredSitesBounds(), 13);
+                    }
                 });
 
                 layerPolygonsPdiCheckbox.addEventListener('change', function() {
                     var cfg = polygonCategoryLayers.pdi;
                     setLayerVisibility(cfg.fill, layerPolygonsPdiCheckbox.checked);
                     setLayerVisibility(cfg.line, layerPolygonsPdiCheckbox.checked);
+                    if (layerPolygonsPdiCheckbox.checked) {
+                        zoomToBounds(getFilteredSitesBounds(), 13);
+                    }
                 });
 
                 layerPolygonsSousGestionCheckbox.addEventListener('change', function() {
                     var cfg = polygonCategoryLayers.sousGestion;
                     setLayerVisibility(cfg.fill, layerPolygonsSousGestionCheckbox.checked);
                     setLayerVisibility(cfg.line, layerPolygonsSousGestionCheckbox.checked);
+                    if (layerPolygonsSousGestionCheckbox.checked) {
+                        zoomToBounds(getFilteredSitesBounds(), 13);
+                    }
                 });
 
                 layerPolygonsHorsGestionCheckbox.addEventListener('change', function() {
                     var cfg = polygonCategoryLayers.horsGestion;
                     setLayerVisibility(cfg.fill, layerPolygonsHorsGestionCheckbox.checked);
                     setLayerVisibility(cfg.line, layerPolygonsHorsGestionCheckbox.checked);
+                    if (layerPolygonsHorsGestionCheckbox.checked) {
+                        zoomToBounds(getFilteredSitesBounds(), 13);
+                    }
                 });
 
                 ['admin0','admin1','admin2','admin3'].forEach(function(lvl) {
@@ -1204,8 +1563,23 @@
                         setLayerVisibility('admin-line-' + lvl, cb.checked);
                         if (lvl === 'admin1') setLayerVisibility('admin1-labels', cb.checked);
                         if (lvl === 'admin2') setLayerVisibility('admin2-labels', cb.checked);
+                        if (cb.checked) {
+                            var maxZoom = lvl === 'admin0' ? 7 : lvl === 'admin1' ? 8 : lvl === 'admin2' ? 10 : 11;
+                            zoomToSource('cod-' + lvl, maxZoom);
+                        }
                     });
                 });
+
+                var layerRhoAcfCheckbox = document.getElementById('layerRhoAcf');
+                if (layerRhoAcfCheckbox) {
+                    layerRhoAcfCheckbox.addEventListener('change', function() {
+                        setLayerVisibility('admin-fill-rho-acf', layerRhoAcfCheckbox.checked);
+                        setLayerVisibility('admin-line-rho-acf', layerRhoAcfCheckbox.checked);
+                        if (layerRhoAcfCheckbox.checked) {
+                            zoomToSource('rho-acf', 11);
+                        }
+                    });
+                }
             }
 
             map.on('error', function(event) {
@@ -1247,6 +1621,7 @@
                 map.addSource('cod-admin1', { type: 'geojson', data: '/geojson/cod_admin1.geojson' });
                 map.addSource('cod-admin2', { type: 'geojson', data: '/geojson/cod_admin2.geojson' });
                 map.addSource('cod-admin3', { type: 'geojson', data: '/geojson/cod_admin3.geojson' });
+                map.addSource('rho-acf', { type: 'geojson', data: '/geojson/BD_Rho_ACF_combined_EPSG4326.geojson' });
 
                 // Admin boundaries layers (added first so they appear below sites)
                 [
@@ -1269,6 +1644,29 @@
                         paint: { 'line-color': cfg.color, 'line-width': cfg.width, 'line-opacity': cfg.opacity },
                         layout: { visibility: cfg.visible ? 'visible' : 'none' }
                     });
+                });
+
+                map.addLayer({
+                    id: 'admin-fill-rho-acf',
+                    type: 'fill',
+                    source: 'rho-acf',
+                    paint: {
+                        'fill-color': '#0f766e',
+                        'fill-opacity': 0.1
+                    },
+                    layout: { visibility: 'none' }
+                });
+
+                map.addLayer({
+                    id: 'admin-line-rho-acf',
+                    type: 'line',
+                    source: 'rho-acf',
+                    paint: {
+                        'line-color': '#0f766e',
+                        'line-width': 1.8,
+                        'line-opacity': 0.9
+                    },
+                    layout: { visibility: 'none' }
                 });
 
                 // Admin label layers
@@ -1501,7 +1899,7 @@
 
                         popup
                             .setLngLat(e.lngLat)
-                            .setHTML(makePopupHtml(e.features[0]))
+                            .setHTML(makePopupHtml(e.features[0], { layerName: layerCfg.value }))
                             .addTo(map);
                     });
                 });
@@ -1557,6 +1955,11 @@
                     if (lvl === 'admin1') setLayerVisibility('admin1-labels', cb.checked);
                     if (lvl === 'admin2') setLayerVisibility('admin2-labels', cb.checked);
                 });
+                var layerRhoAcfCheckbox = document.getElementById('layerRhoAcf');
+                if (layerRhoAcfCheckbox) {
+                    setLayerVisibility('admin-fill-rho-acf', layerRhoAcfCheckbox.checked);
+                    setLayerVisibility('admin-line-rho-acf', layerRhoAcfCheckbox.checked);
+                }
             }
 
             window.setBasemap = function(styleKey, btn) {
@@ -1607,17 +2010,22 @@
             });
 
             document.getElementById('btnPrintMap').addEventListener('click', function() {
+                applyPrintPageSize();
                 updatePrintDetails();
+                prepareMapForPrint();
                 map.resize();
                 setTimeout(function() { window.print(); }, 120);
             });
 
             window.addEventListener('beforeprint', function() {
+                applyPrintPageSize();
                 updatePrintDetails();
+                prepareMapForPrint();
                 map.resize();
             });
 
             window.addEventListener('afterprint', function() {
+                restoreMapAfterPrint();
                 setTimeout(function() { map.resize(); }, 120);
             });
 

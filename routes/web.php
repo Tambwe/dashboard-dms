@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\ChangePasswordController;
 use App\Http\Controllers\Admin\UserController;
@@ -22,6 +23,9 @@ use App\Http\Controllers\ProgramImportController;
 use App\Http\Controllers\Admin\ProgramIndicatorController;
 use App\Http\Controllers\Admin\ProgramActivityController;
 use App\Http\Controllers\Admin\ProgramSubActivityController;
+use App\Http\Controllers\Admin\MobileQuestionnaireController as AdminMobileQuestionnaireController;
+use App\Http\Controllers\MobileCollectionController;
+use App\Http\Controllers\Api\MobileQuestionnaireController as ApiMobileQuestionnaireController;
 
 /*
 |--------------------------------------------------------------------------
@@ -34,10 +38,13 @@ use App\Http\Controllers\Admin\ProgramSubActivityController;
 |
 */
 
-// Page d'accueil → redirige vers le dashboard
+// Page d'accueil publique
 Route::get('/', function () {
-    return redirect()->route('dashboard');
-});
+    return view('welcome');
+})->name('home');
+
+// Compatibilité ancienne URL /home
+Route::redirect('/home', '/dashboard', 302);
 
 // Page À propos (welcome)
 Route::get('/about', function () {
@@ -51,6 +58,8 @@ Route::get('/aide', function () {
 
 // Dashboard public (accessible sans authentification)
 Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+Route::match(['GET', 'POST'], '/dashboard/export/excel', [DashboardController::class, 'exportExcel'])->name('dashboard.export.excel');
+Route::match(['GET', 'POST'], '/dashboard/export/word', [DashboardController::class, 'exportWord'])->name('dashboard.export.word');
 
 // Profil public des sites OSSAT (sans authentification)
 Route::get('/profil-site', [PublicSiteController::class, 'index'])->name('public.site.index');
@@ -58,26 +67,115 @@ Route::get('/profil-site/{site}', [PublicSiteController::class, 'show'])->name('
 Route::get('/cartographie', [PublicSiteController::class, 'cartographie'])->name('public.cartographie');
 Route::get('/cartographie-mapbox', [PublicSiteController::class, 'cartographieMapbox'])->name('public.cartographie.mapbox');
 
-// API publiques cascade Province → Territoire → Site (sans auth)
+// API publiques cascade Province → Territoire → Zone de sante → Site (sans auth)
 Route::get('/api/public/territoires', function (\Illuminate\Http\Request $request) {
     return response()->json(
         \App\Models\Territoire::where('province_id', $request->province_id)
             ->orderBy('name')->get(['id', 'name'])
     );
 });
+Route::get('/api/public/communes', function (\Illuminate\Http\Request $request) {
+    if (!$request->filled('territoire_id')) {
+        return response()->json([]);
+    }
+
+    $territoire = \App\Models\Territoire::select('id', 'name')->find($request->territoire_id);
+
+    if (!$territoire) {
+        return response()->json([]);
+    }
+
+    $sites = \App\Models\Site::with('commune:id,name,territoire_id')
+        ->whereNull('date_fermeture')
+        ->where(function ($query) use ($territoire) {
+            $query->whereHas('commune', function ($communeQuery) use ($territoire) {
+                $communeQuery->where('territoire_id', $territoire->id);
+            });
+
+            if (!empty($territoire->name)) {
+                $query->orWhere('territoire', $territoire->name);
+            }
+        })
+        ->get(['id', 'commune_id', 'zone_sante']);
+
+    $zones = $sites
+        ->map(function ($site) {
+            if ($site->commune_id && $site->commune) {
+                return [
+                    'id' => 'commune:' . $site->commune_id,
+                    'name' => $site->commune->name,
+                ];
+            }
+
+            $zoneSante = trim((string) $site->zone_sante);
+            if ($zoneSante === '') {
+                return null;
+            }
+
+            return [
+                'id' => 'zone:' . $zoneSante,
+                'name' => $zoneSante,
+            ];
+        })
+        ->filter()
+        ->unique('id')
+        ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+        ->values();
+
+    return response()->json($zones);
+});
 Route::get('/api/public/sites', function (\Illuminate\Http\Request $request) {
+    $query = \App\Models\Site::query()->whereNull('date_fermeture');
+
+    if ($request->filled('commune_id')) {
+        $communeKey = (string) $request->commune_id;
+
+        if (str_starts_with($communeKey, 'commune:')) {
+            $query->where('commune_id', (int) substr($communeKey, 8));
+        } elseif (str_starts_with($communeKey, 'zone:')) {
+            $zoneSante = substr($communeKey, 5);
+            $query->where('zone_sante', $zoneSante);
+
+            if ($request->filled('territoire_id')) {
+                $territoire = \App\Models\Territoire::select('id', 'name')->find($request->territoire_id);
+                if ($territoire && !empty($territoire->name)) {
+                    $query->where(function ($territoireQuery) use ($territoire) {
+                        $territoireQuery->whereHas('commune', function ($communeQuery) use ($territoire) {
+                            $communeQuery->where('territoire_id', $territoire->id);
+                        })->orWhere('territoire', $territoire->name);
+                    });
+                }
+            }
+        } else {
+            $query->where('commune_id', $communeKey);
+        }
+    } elseif ($request->filled('territoire_id')) {
+        $territoire = \App\Models\Territoire::select('id', 'name')->find($request->territoire_id);
+
+        if ($territoire) {
+            $query->where(function ($territoireQuery) use ($territoire) {
+                $territoireQuery->whereHas('commune', function ($communeQuery) use ($territoire) {
+                    $communeQuery->where('territoire_id', $territoire->id);
+                });
+
+                if (!empty($territoire->name)) {
+                    $territoireQuery->orWhere('territoire', $territoire->name);
+                }
+            });
+        }
+    }
+
     return response()->json(
-        \App\Models\Site::whereHas('commune', function ($q) use ($request) {
-            $q->where('territoire_id', $request->territoire_id);
-        })->select('id', 'nom', 'code_site')->orderBy('nom')->get()
+        $query->select('id', 'nom', 'code_site')
+            ->orderBy('nom')
+            ->get()
     );
 });
 
-// Master List des sites (authentification requise)
-Route::middleware(['auth'])->group(function () {
-    Route::get('/sites/master-list', [SiteMasterListController::class, 'index'])->name('sites.master-list');
-    Route::get('/sites/master-list/export', [SiteMasterListController::class, 'exportExcel'])->name('sites.master-list.export');
-});
+// Master List des sites (publique)
+Route::get('/sites/master-list', [SiteMasterListController::class, 'index'])->name('sites.master-list');
+Route::get('/sites/master-list/export', [SiteMasterListController::class, 'exportExcel'])->name('sites.master-list.export');
+Route::get('/sites/master-list/{site}/history', [SiteMasterListController::class, 'history'])->name('sites.master-list.history');
 
 // Routes d'authentification
 Route::middleware('guest')->group(function () {
@@ -87,10 +185,37 @@ Route::middleware('guest')->group(function () {
 
 Route::post('/logout', [LoginController::class, 'logout'])->middleware('auth')->name('logout');
 
+// API mobile native pour collecte Android/iOS sans authentification web.
+// Les applications mobiles n’envoient pas le cookie CSRF de Laravel, donc il faut les exclure explicitement.
+Route::withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class])->group(function () {
+    Route::post('/api/mobile/login', [\App\Http\Controllers\MobileCollectionController::class, 'loginNative'])->name('mobile.native.login');
+    Route::post('/api/mobile/photo-upload', [\App\Http\Controllers\MobileCollectionController::class, 'uploadNativePhoto'])->name('mobile.native.photo-upload');
+    Route::post('/api/mobile/save', [\App\Http\Controllers\MobileCollectionController::class, 'saveNative'])->name('mobile.native.save');
+    Route::post('/api/mobile/ossat/save', [\App\Http\Controllers\MobileCollectionController::class, 'saveOssatNative'])->name('mobile.native.ossat.save');
+    Route::post('/api/mobile/sync', [\App\Http\Controllers\MobileCollectionController::class, 'syncNative'])->name('mobile.native.sync');
+    Route::get('/api/mobile/questionnaires/active', [ApiMobileQuestionnaireController::class, 'active'])->name('mobile.native.questionnaires.active');
+    Route::post('/api/mobile/questionnaire/submit', [ApiMobileQuestionnaireController::class, 'submit'])->name('mobile.native.questionnaire.submit');
+});
+
 // Routes de changement de mot de passe (accessible uniquement aux utilisateurs authentifiés)
 Route::middleware(['auth'])->group(function () {
     Route::get('/change-password', [ChangePasswordController::class, 'show'])->name('password.change.show');
     Route::post('/change-password', [ChangePasswordController::class, 'update'])->name('password.change');
+
+    Route::prefix('mobile')->name('mobile.')->group(function () {
+        Route::get('/', [MobileCollectionController::class, 'index'])->name('index');
+        Route::middleware('check.role:super_admin,admin_organisation')->group(function () {
+            Route::get('/synced-data', [MobileCollectionController::class, 'syncedData'])->name('synced-data');
+            Route::get('/synced-data/export', [MobileCollectionController::class, 'exportSyncedDataExcel'])->name('synced-data.export');
+            Route::get('/synced-data/{source}/{id}', [MobileCollectionController::class, 'showSyncedData'])->name('synced-data.show');
+            Route::get('/synced-data/{source}/{id}/edit', [MobileCollectionController::class, 'editSyncedData'])->name('synced-data.edit');
+            Route::put('/synced-data/{source}/{id}', [MobileCollectionController::class, 'updateSyncedData'])->name('synced-data.update');
+            Route::delete('/synced-data/{source}/{id}', [MobileCollectionController::class, 'destroySyncedData'])->name('synced-data.destroy');
+            Route::post('/synced-data/{source}/{id}/validate', [MobileCollectionController::class, 'validateSyncedData'])->name('synced-data.validate');
+        });
+        Route::post('/save', [MobileCollectionController::class, 'save'])->name('save');
+        Route::post('/sync', [MobileCollectionController::class, 'sync'])->name('sync');
+    });
 });
 
 // Routes d'administration - Accessible par super admin et admin organisation
@@ -103,7 +228,10 @@ Route::middleware(['auth', 'check.role:super_admin,admin_organisation'])->prefix
         ->name('mouvements.import.template');
     Route::post('mouvements/import', [SiteMouvementPopulationController::class, 'import'])
         ->name('mouvements.import');
-    Route::resource('mouvements', SiteMouvementPopulationController::class);
+    Route::get('mouvements/historique', [SiteMouvementPopulationController::class, 'history'])
+        ->name('mouvements.history');
+    Route::resource('mouvements', SiteMouvementPopulationController::class)
+        ->only(['index', 'create', 'store', 'show']);
     
     // Routes de validation (réservées au super admin)
     Route::middleware('check.role:super_admin')->group(function () {
@@ -116,10 +244,13 @@ Route::middleware(['auth', 'check.role:super_admin,admin_organisation'])->prefix
     // Dashboard admin
     Route::get('/dashboard', function () {
         $user = auth()->user();
+        $managedUsersQuery = $user->getManagedUsersQuery();
         $stats = [
-            'total_users' => $user->getManagedUsersQuery()->count(),
-            'active_users' => $user->getManagedUsersQuery()->where('is_active', true)->count(),
-            'recent_users' => $user->getManagedUsersQuery()->latest()->take(5)->get(),
+            'total_users' => (clone $managedUsersQuery)->count(),
+            'active_users' => Schema::hasColumn('users', 'is_active')
+                ? (clone $managedUsersQuery)->where('is_active', true)->count()
+                : (clone $managedUsersQuery)->count(),
+            'recent_users' => (clone $managedUsersQuery)->latest()->take(5)->get(),
         ];
         return view('admin.dashboard', compact('stats'));
     })->name('dashboard');
@@ -127,6 +258,15 @@ Route::middleware(['auth', 'check.role:super_admin,admin_organisation'])->prefix
 
 // Routes réservées au super admin uniquement
 Route::middleware(['auth', 'check.role:super_admin'])->prefix('admin')->name('admin.')->group(function () {
+    Route::get('mobile-questionnaires', [AdminMobileQuestionnaireController::class, 'index'])->name('mobile-questionnaires.index');
+    Route::get('mobile-questionnaires/{mobileQuestionnaire}/edit', [AdminMobileQuestionnaireController::class, 'edit'])->name('mobile-questionnaires.edit');
+    Route::get('mobile-questionnaires/{mobileQuestionnaire}/export', [AdminMobileQuestionnaireController::class, 'exportXlsx'])->name('mobile-questionnaires.export');
+    Route::put('mobile-questionnaires/{mobileQuestionnaire}', [AdminMobileQuestionnaireController::class, 'update'])->name('mobile-questionnaires.update');
+    Route::delete('mobile-questionnaires/{mobileQuestionnaire}', [AdminMobileQuestionnaireController::class, 'destroy'])->name('mobile-questionnaires.destroy');
+    Route::post('mobile-questionnaires/{mobileQuestionnaire}/grouped-update', [AdminMobileQuestionnaireController::class, 'updateGrouped'])->name('mobile-questionnaires.grouped-update');
+    Route::post('mobile-questionnaires/{mobileQuestionnaire}/questions', [AdminMobileQuestionnaireController::class, 'addQuestion'])->name('mobile-questionnaires.questions.store');
+    Route::post('mobile-questionnaires/import', [AdminMobileQuestionnaireController::class, 'importFromXlsx'])->name('mobile-questionnaires.import');
+
     // Cadre de programmation : import Excel
     Route::get('programme/import', [ProgramImportController::class, 'showImport'])->name('programme.import.show');
     Route::post('programme/import', [ProgramImportController::class, 'import'])->name('programme.import.process');
@@ -164,6 +304,8 @@ Route::middleware(['auth', 'check.role:super_admin'])->prefix('admin')->name('ad
     Route::post('sites/{site}/assign-to-organisation', [SiteController::class, 'assignToOrganisation'])->name('sites.assign-to-organisation');
     Route::delete('sites/{site}/remove-from-organisation', [SiteController::class, 'removeFromOrganisation'])->name('sites.remove-from-organisation');
     Route::post('sites/bulk-assign', [SiteController::class, 'bulkAssign'])->name('sites.bulk-assign');
+    Route::post('sites/{site}/close', [SiteController::class, 'close'])->name('sites.close');
+    Route::post('sites/{site}/reopen', [SiteController::class, 'reopen'])->name('sites.reopen');
     
     // Référentiels de choix OSSAT (listes déroulantes)
     Route::resource('ossat-choix', OssatChoixController::class);
@@ -183,6 +325,13 @@ Route::middleware(['auth', 'check.role:super_admin'])->prefix('admin')->name('ad
 Route::middleware(['auth'])->prefix('my')->name('user.')->group(function () {
     // Sites assignés à l'utilisateur pour la collecte de données
     Route::get('sites', [UserSiteController::class, 'index'])->name('sites.index');
+    Route::get('sites-collected', [UserSiteController::class, 'collectedIndex'])->name('sites.collected.index');
+    Route::get('sites-collected/{siteGeography}', [UserSiteController::class, 'showCollected'])->name('sites.collected.show');
+    Route::get('sites-collected/{siteGeography}/edit', [UserSiteController::class, 'editCollected'])->name('sites.collected.edit');
+    Route::put('sites-collected/{siteGeography}', [UserSiteController::class, 'updateCollected'])->name('sites.collected.update');
+    Route::delete('sites-collected/{siteGeography}', [UserSiteController::class, 'destroyCollected'])->name('sites.collected.destroy');
+    Route::post('sites/{site}/close', [UserSiteController::class, 'close'])->name('sites.close');
+    Route::post('sites/{site}/reopen', [UserSiteController::class, 'reopen'])->name('sites.reopen');
     Route::get('sites/{site}/geojson', [UserSiteController::class, 'geojson'])->name('sites.geojson');
     Route::get('sites/{site}/edit', [UserSiteController::class, 'edit'])->name('sites.edit');
     Route::put('sites/{site}', [UserSiteController::class, 'update'])->name('sites.update');
@@ -291,10 +440,44 @@ Route::get('/api/territoires', function(\Illuminate\Http\Request $request) {
 // API pour charger les sites selon le territoire (utilisé par OSSAT)
 Route::middleware(['auth'])->get('/api/sites-par-territoire', function(\Illuminate\Http\Request $request) {
     $user = auth()->user();
+    $territoire = \App\Models\Territoire::select('id', 'name')->find($request->territoire_id);
+    $normalizedTerritoireName = $territoire ? strtolower(trim((string) $territoire->name)) : null;
 
-    $query = \App\Models\Site::whereHas('commune', function ($q) use ($request) {
-        $q->where('territoire_id', $request->territoire_id);
-    });
+    $query = \App\Models\Site::query()
+        ->where(function ($siteQuery) use ($request, $territoire, $normalizedTerritoireName) {
+            $siteQuery->whereHas('commune', function ($q) use ($request) {
+                $q->where('territoire_id', $request->territoire_id);
+            });
+
+            if ($territoire && \Illuminate\Support\Facades\Schema::hasColumn('sites', 'territoire')) {
+                $siteQuery->orWhere('territoire', $territoire->name);
+                if ($normalizedTerritoireName !== '') {
+                    $siteQuery->orWhereRaw('LOWER(TRIM(territoire)) = ?', [$normalizedTerritoireName]);
+                }
+            }
+        });
+
+    if (\Illuminate\Support\Facades\Schema::hasColumn('sites', 'date_fermeture')) {
+        $query->whereNull('date_fermeture');
+    }
+
+    if ($request->filled('commune_id')) {
+        $commune = \App\Models\Commune::select('id', 'name')->find($request->commune_id);
+        $normalizedCommuneName = $commune ? strtolower(trim((string) $commune->name)) : null;
+
+        $query->where(function ($siteQuery) use ($request, $commune, $normalizedCommuneName) {
+            $siteQuery->whereHas('commune', function ($q) use ($request) {
+                $q->where('id', $request->commune_id);
+            });
+
+            if ($commune && \Illuminate\Support\Facades\Schema::hasColumn('sites', 'zone_sante')) {
+                $siteQuery->orWhere('zone_sante', $commune->name);
+                if ($normalizedCommuneName !== '') {
+                    $siteQuery->orWhereRaw('LOWER(TRIM(zone_sante)) = ?', [$normalizedCommuneName]);
+                }
+            }
+        });
+    }
 
     if ($user->isSuperAdmin()) {
         // Super admin voit tous les sites
@@ -321,6 +504,14 @@ Route::middleware(['auth'])->get('/api/sites-par-territoire', function(\Illumina
         });
     }
 
-    $sites = $query->select('id', 'nom', 'code_site')->orderBy('nom')->get();
+    $selectColumns = ['id', 'nom', 'code_site'];
+    if (\Illuminate\Support\Facades\Schema::hasColumn('sites', 'commune_id')) {
+        $selectColumns[] = 'commune_id';
+    }
+    if (\Illuminate\Support\Facades\Schema::hasColumn('sites', 'zone_sante')) {
+        $selectColumns[] = 'zone_sante';
+    }
+
+    $sites = $query->select($selectColumns)->orderBy('nom')->get();
     return response()->json($sites);
 });

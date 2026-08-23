@@ -13,6 +13,7 @@
 
     <!-- Scripts -->
     <x-vite-manifest-loader :assets="['resources/css/app.css', 'resources/js/app.js']" />
+    <x-sweetalert-flash />
 </head>
 <body class="h-full bg-gradient-to-br from-primary-50 via-white to-secondary-50 dark:from-gray-900 dark:to-gray-800 transition-colors duration-300">
     <!-- Navigation -->

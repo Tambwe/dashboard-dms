@@ -92,26 +92,28 @@
 }
 </style>
 @php
-    $formatDelta = function($delta) {
+    $comparisonReferenceLabel = $comparisonPeriod ?? 'aucune période antérieure disponible';
+
+    $formatDelta = function($delta) use ($comparisonReferenceLabel) {
         $value = $delta['value'] ?? 0;
         $percent = $delta['percent'] ?? null;
 
         if ($value > 0) {
-            return '↑ Différence: +' . number_format($value, 0, ',', ' ') . ($percent !== null ? ' (+' . $percent . '%)' : '') . ' vs mois précédent';
+            return '↑ Différence: +' . number_format($value, 0, ',', ' ') . ($percent !== null ? ' (+' . $percent . '%)' : '') . ' vs ' . $comparisonReferenceLabel;
         }
 
         if ($value < 0) {
-            return '↓ Différence: ' . number_format($value, 0, ',', ' ') . ($percent !== null ? ' (' . $percent . '%)' : '') . ' vs mois précédent';
+            return '↓ Différence: ' . number_format($value, 0, ',', ' ') . ($percent !== null ? ' (' . $percent . '%)' : '') . ' vs ' . $comparisonReferenceLabel;
         }
 
-        return '→ Différence: 0 vs mois précédent';
+        return '→ Différence: 0 vs ' . $comparisonReferenceLabel;
     };
 
     $deltaClass = function($delta) {
         $value = $delta['value'] ?? 0;
-        if ($value > 0) return 'text-xs text-green-600 dark:text-green-400 mt-1';
-        if ($value < 0) return 'text-xs text-red-600 dark:text-red-400 mt-1';
-        return 'text-xs text-gray-500 dark:text-gray-400 mt-1';
+        if ($value > 0) return 'text-xs text-red-600 dark:text-red-400 mt-1';
+        if ($value < 0) return 'text-xs text-green-600 dark:text-green-400 mt-1';
+        return 'text-xs text-orange-600 dark:text-orange-400 mt-1';
     };
 @endphp
 <div class="space-y-6">
@@ -198,6 +200,15 @@
                     pattern="^(0[1-9]|1[0-2])\/\d{4}$"
                     class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:border-primary-500 focus:ring-primary-500"
                 >
+                <p id="dashboard-period-note" class="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                    {{ $dashboardFallbackNote ?? '' }}
+                </p>
+                <p id="dashboard-considered-period" class="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                    Données considérées: {{ $consideredPeriod ?? $selectedPeriod }}
+                </p>
+                <p id="dashboard-comparison-period" class="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                    Comparaison: {{ $consideredPeriod ?? $selectedPeriod }} vs {{ $comparisonReferenceLabel }}
+                </p>
             </div>
         </div>
     </div>
@@ -221,6 +232,20 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             A propos
+        </a>
+        <a id="export-dashboard-word-btn" href="{{ route('dashboard.export.word') }}" class="filter-button">
+            <svg class="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 3h6l4 4v14H7z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 3v5h5" />
+            </svg>
+            Word
+        </a>
+        <a id="export-dashboard-excel-btn" href="{{ route('dashboard.export.excel') }}" class="filter-button">
+            <svg class="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 3h6l4 4v14H7z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 12l4 4m0-4l-4 4" />
+            </svg>
+            Excel
         </a>
         <button id="print-dashboard-btn" onclick="window.print()" class="filter-button">
             <svg class="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -261,7 +286,24 @@
                 </button>
             </div>
         </div>
+        <p id="dashboard-map-considered-period" class="mb-4 text-xs text-gray-600 dark:text-gray-400">
+            Carte - Données considérées: {{ $consideredPeriod ?? $selectedPeriod }}
+        </p>
+        <div id="dashboard-map-legend" class="mb-4 flex flex-wrap items-center gap-3 text-xs text-gray-700 dark:text-gray-300"></div>
         <div id="dashboard-map" class="rounded-lg h-96 border border-gray-200 dark:border-gray-700" style="height: 500px;"></div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+        <div class="flex items-center justify-between gap-4 mb-4">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                </svg>
+                Sites avec GPS par catégorie
+            </h3>
+            <span id="gps-category-total" class="text-sm font-medium text-gray-600 dark:text-gray-400">0 site</span>
+        </div>
+        <div id="gps-category-stats" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"></div>
     </div>
 
     <!-- Lien vers Master List -->
@@ -482,8 +524,12 @@
 <!-- Charts Initialization Script -->
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        const hasApexCharts = typeof window.ApexCharts === 'function';
+
         // Age Distribution Chart avec données PHP
-        const ageChart = new ApexCharts(document.querySelector("#ageChart"), {
+        let ageChart = null;
+        if (hasApexCharts) {
+            ageChart = new ApexCharts(document.querySelector("#ageChart"), {
             series: [{
                 name: 'Population',
                 data: [
@@ -531,11 +577,14 @@
             theme: {
                 mode: document.documentElement.classList.contains('dark') ? 'dark' : 'light'
             }
-        });
-        ageChart.render();
+            });
+            ageChart.render();
+        }
 
         // Gender Distribution Chart avec données PHP
-        const genderChart = new ApexCharts(document.querySelector("#genderChart"), {
+        let genderChart = null;
+        if (hasApexCharts) {
+            genderChart = new ApexCharts(document.querySelector("#genderChart"), {
             series: [{{ $stats['femmes'] }}, {{ $stats['hommes'] }}],
             chart: {
                 type: 'donut',
@@ -559,15 +608,18 @@
             theme: {
                 mode: document.documentElement.classList.contains('dark') ? 'dark' : 'light'
             }
-        });
-        genderChart.render();
+            });
+            genderChart.render();
+        }
 
         // Province Distribution Chart avec données PHP
-        const provinceChartData = @json($provinceDistribution);
+        const provinceChartData = @json($provinceDistribution) || {};
         const provinceNames = Object.keys(provinceChartData);
         const provinceValues = Object.values(provinceChartData);
-        
-        const provinceChart = new ApexCharts(document.querySelector("#provinceChart"), {
+
+        let provinceChart = null;
+        if (hasApexCharts) {
+            provinceChart = new ApexCharts(document.querySelector("#provinceChart"), {
             series: [{
                 name: 'Population',
                 data: provinceValues
@@ -608,13 +660,18 @@
             theme: {
                 mode: document.documentElement.classList.contains('dark') ? 'dark' : 'light'
             }
-        });
-        provinceChart.render();
+            });
+            provinceChart.render();
+        }
 
         // Trend Chart - Charger via API
         let trendChart;
         
         function initTrendChart() {
+            if (!hasApexCharts) {
+                return;
+            }
+
             fetch('/api/dashboard/trends')
                 .then(response => response.json())
                 .then(data => {
@@ -694,7 +751,16 @@
         const gestionnaireSelect = document.getElementById('gestionnaire-select');
         const categorieSiteSelect = document.getElementById('categorie-site-select');
         const periodeSelect = document.getElementById('periode-select');
-        const defaultPeriodValue = @json($selectedPeriod);
+            const defaultPeriodValue = @json($selectedPeriod);
+            const defaultConsideredPeriodValue = @json($consideredPeriod ?? $selectedPeriod);
+            const defaultComparisonReferencePeriod = @json($comparisonPeriod ?? null);
+            const dashboardPeriodNote = document.getElementById('dashboard-period-note');
+            const dashboardConsideredPeriod = document.getElementById('dashboard-considered-period');
+            const dashboardComparisonPeriod = document.getElementById('dashboard-comparison-period');
+            const dashboardMapLegend = document.getElementById('dashboard-map-legend');
+            const gpsCategoryStats = document.getElementById('gps-category-stats');
+            const gpsCategoryTotal = document.getElementById('gps-category-total');
+            const dashboardMapConsideredPeriod = document.getElementById('dashboard-map-considered-period');
 
         const printSummaryEls = {
             province: document.getElementById('print-filter-province'),
@@ -707,6 +773,10 @@
             periode: document.getElementById('print-filter-periode'),
             generatedAt: document.getElementById('print-generated-at'),
         };
+
+        const exportDashboardWordBtn = document.getElementById('export-dashboard-word-btn');
+        const exportDashboardExcelBtn = document.getElementById('export-dashboard-excel-btn');
+        const csrfToken = @json(csrf_token());
 
         function getSelectedLabel(selectEl, fallback) {
             if (!selectEl) return fallback;
@@ -736,6 +806,198 @@
             }
         }
 
+        function collectDashboardFilterParams() {
+            const params = new URLSearchParams();
+
+            if (provinceSelect?.value) params.set('province_id', provinceSelect.value);
+            if (territoireSelect?.value) params.set('territoire_id', territoireSelect.value);
+            if (communeSelect?.value) params.set('commune_id', communeSelect.value);
+            if (siteSelect?.value) params.set('site_id', siteSelect.value);
+            if (coordinateurSelect?.value) params.set('coordinateur_id', coordinateurSelect.value);
+            if (gestionnaireSelect?.value) params.set('gestionnaire_id', gestionnaireSelect.value);
+            if (categorieSiteSelect?.value) params.set('categorie_site_id', categorieSiteSelect.value);
+
+            const normalizedPeriod = normalizeAndClampPeriodInput(periodeSelect?.value || '');
+            if (normalizedPeriod) {
+                params.set('periode', normalizedPeriod);
+            }
+
+            return params;
+        }
+
+        function updateDashboardExportLinks() {
+            const params = collectDashboardFilterParams();
+
+            const queryString = params.toString();
+            const wordUrl = @json(route('dashboard.export.word')) + (queryString ? `?${queryString}` : '');
+            const excelUrl = @json(route('dashboard.export.excel')) + (queryString ? `?${queryString}` : '');
+
+            if (exportDashboardWordBtn) {
+                exportDashboardWordBtn.setAttribute('href', wordUrl);
+            }
+
+            if (exportDashboardExcelBtn) {
+                exportDashboardExcelBtn.setAttribute('href', excelUrl);
+            }
+        }
+
+        async function ensureHtml2CanvasLoaded() {
+            if (typeof window.html2canvas === 'function') {
+                return true;
+            }
+
+            return new Promise((resolve) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+                script.async = true;
+                script.onload = () => resolve(typeof window.html2canvas === 'function');
+                script.onerror = () => resolve(false);
+                document.head.appendChild(script);
+            });
+        }
+
+        async function captureDashboardMapSnapshot() {
+            const mapElement = document.getElementById('dashboard-map');
+            if (!mapElement) {
+                return null;
+            }
+
+            const html2CanvasReady = await ensureHtml2CanvasLoaded();
+            if (!html2CanvasReady) {
+                return null;
+            }
+
+            if (dashboardMap?.map && typeof dashboardMap.map.invalidateSize === 'function') {
+                dashboardMap.map.invalidateSize();
+            }
+
+            // Leave extra time for Leaflet tiles and overlays to finish painting before screenshot.
+            await new Promise((resolve) => setTimeout(resolve, 700));
+
+            try {
+                const sourceCanvas = await window.html2canvas(mapElement, {
+                    backgroundColor: '#ffffff',
+                    scale: 1.5,
+                    useCORS: true,
+                    allowTaint: false,
+                    logging: false,
+                });
+
+                // Normalize to a strict 16:9 canvas to avoid any downstream distortion.
+                const targetWidth = 1600;
+                const targetHeight = 900;
+                const outputCanvas = document.createElement('canvas');
+                outputCanvas.width = targetWidth;
+                outputCanvas.height = targetHeight;
+                const ctx = outputCanvas.getContext('2d');
+                if (!ctx) {
+                    return sourceCanvas.toDataURL('image/png', 0.92);
+                }
+
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, targetWidth, targetHeight);
+
+                const srcW = sourceCanvas.width;
+                const srcH = sourceCanvas.height;
+                const scale = Math.min(targetWidth / srcW, targetHeight / srcH);
+                const drawW = srcW * scale;
+                const drawH = srcH * scale;
+                const offsetX = (targetWidth - drawW) / 2;
+                const offsetY = (targetHeight - drawH) / 2;
+
+                ctx.drawImage(sourceCanvas, offsetX, offsetY, drawW, drawH);
+
+                return outputCanvas.toDataURL('image/png', 0.92);
+            } catch (error) {
+                console.error('Erreur capture carte dashboard:', error);
+                return null;
+            }
+        }
+
+        function getDownloadFilename(response, fallbackName) {
+            const disposition = response.headers.get('Content-Disposition') || '';
+            const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+            if (utf8Match && utf8Match[1]) {
+                return decodeURIComponent(utf8Match[1]);
+            }
+
+            const asciiMatch = disposition.match(/filename="?([^";]+)"?/i);
+            if (asciiMatch && asciiMatch[1]) {
+                return asciiMatch[1];
+            }
+
+            return fallbackName;
+        }
+
+        async function postDashboardExport(format) {
+            const exportUrl = format === 'word'
+                ? @json(route('dashboard.export.word'))
+                : @json(route('dashboard.export.excel'));
+            const fallbackName = format === 'word' ? 'dashboard.docx' : 'dashboard.xlsx';
+
+            const params = collectDashboardFilterParams();
+            const mapSnapshot = await captureDashboardMapSnapshot();
+            if (!mapSnapshot) {
+                throw new Error('Capture de la carte indisponible. Vérifiez le chargement complet de la carte puis réessayez.');
+            }
+
+            const formData = new FormData();
+            params.forEach((value, key) => formData.append(key, value));
+            formData.append('map_snapshot', mapSnapshot);
+
+            const response = await fetch(exportUrl, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: formData,
+            });
+
+            if (!response.ok) {
+                throw new Error(`Échec export ${format.toUpperCase()} (${response.status})`);
+            }
+
+            const blob = await response.blob();
+            const filename = getDownloadFilename(response, fallbackName);
+            const blobUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(blobUrl);
+        }
+
+        function wireDashboardExportButton(button, format) {
+            if (!button) {
+                return;
+            }
+
+            button.addEventListener('click', async (event) => {
+                event.preventDefault();
+                if (button.dataset.exporting === '1') {
+                    return;
+                }
+
+                button.dataset.exporting = '1';
+                button.classList.add('opacity-60', 'pointer-events-none');
+                button.setAttribute('aria-busy', 'true');
+
+                try {
+                    await postDashboardExport(format);
+                } catch (error) {
+                    console.error(error);
+                    alert(error?.message || `Impossible de générer l'export ${format.toUpperCase()} avec la capture de la carte.`);
+                } finally {
+                    button.dataset.exporting = '0';
+                    button.classList.remove('opacity-60', 'pointer-events-none');
+                    button.removeAttribute('aria-busy');
+                }
+            });
+        }
+
         [provinceSelect, territoireSelect, communeSelect, siteSelect, coordinateurSelect, gestionnaireSelect, categorieSiteSelect, periodeSelect]
             .forEach((el) => el?.addEventListener('change', updatePrintFilterSummary));
         window.addEventListener('beforeprint', updatePrintFilterSummary);
@@ -759,6 +1021,35 @@
 
             return raw;
         };
+
+        const currentPeriodValue = (() => {
+            const now = new Date();
+            return `${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+        })();
+
+        const isFuturePeriod = (periodValue) => {
+            if (!/^(0[1-9]|1[0-2])\/\d{4}$/.test(periodValue || '')) {
+                return false;
+            }
+
+            const [month, year] = periodValue.split('/').map(Number);
+            const [currentMonth, currentYear] = currentPeriodValue.split('/').map(Number);
+
+            return (year * 100 + month) > (currentYear * 100 + currentMonth);
+        };
+
+        const normalizeAndClampPeriodInput = (value) => {
+            const normalized = normalizePeriodInput(value);
+            if (!/^(0[1-9]|1[0-2])\/\d{4}$/.test(normalized)) {
+                return '';
+            }
+
+            return isFuturePeriod(normalized) ? currentPeriodValue : normalized;
+        };
+
+        wireDashboardExportButton(exportDashboardWordBtn, 'word');
+        wireDashboardExportButton(exportDashboardExcelBtn, 'excel');
+        updateDashboardExportLinks();
 
         // Charger les provinces au chargement de la page
         loadProvinces();
@@ -1057,12 +1348,62 @@
                 coordinateur_id: coordinateurSelect.value || null,
                 gestionnaire_id: gestionnaireSelect.value || null,
                 categorie_site_id: categorieSiteSelect.value || null,
-                periode: normalizePeriodInput(periodeSelect?.value || '') || null
+                periode: normalizeAndClampPeriodInput(periodeSelect?.value || '') || null
             };
             
             dashboardMap.loadSites(filters).then(sites => {
                 if (requestId !== lastMapRequestId) {
                     return;
+                }
+
+                const mapPayload = typeof dashboardMap.getLastPayload === 'function'
+                    ? dashboardMap.getLastPayload()
+                    : null;
+
+                if (dashboardMapConsideredPeriod) {
+                    const mapPeriod = mapPayload?.periode_consideree || filters.periode || defaultPeriodValue;
+                    dashboardMapConsideredPeriod.textContent = `Carte - Données considérées: ${mapPeriod}`;
+                }
+
+                if (dashboardMapLegend) {
+                    const legendItems = typeof dashboardMap.getTypeLegend === 'function'
+                        ? dashboardMap.getTypeLegend(sites)
+                        : [];
+
+                    if (!legendItems.length) {
+                        dashboardMapLegend.innerHTML = '<span class="text-gray-500 dark:text-gray-400">Légende indisponible</span>';
+                    } else {
+                        dashboardMapLegend.innerHTML = legendItems.map((item) => `
+                            <span class="inline-flex items-center gap-2 rounded-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-3 py-1">
+                                <span class="inline-block h-2.5 w-2.5 rounded-full" style="background-color: ${item.color};"></span>
+                                <span>${item.label}</span>
+                                <span class="text-gray-500 dark:text-gray-400">(${item.count})</span>
+                            </span>
+                        `).join('');
+                    }
+
+                    if (gpsCategoryStats) {
+                        if (!legendItems.length) {
+                            gpsCategoryStats.innerHTML = '<div class="text-sm text-gray-500 dark:text-gray-400">Aucun site avec GPS disponible pour les filtres sélectionnés.</div>';
+                        } else {
+                            gpsCategoryStats.innerHTML = legendItems.map((item) => `
+                                <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/60 p-4">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <div class="flex items-center gap-3 min-w-0">
+                                            <span class="inline-block h-3 w-3 rounded-full flex-shrink-0" style="background-color: ${item.color};"></span>
+                                            <span class="font-medium text-gray-900 dark:text-white truncate">${item.label}</span>
+                                        </div>
+                                        <span class="text-2xl font-bold text-gray-900 dark:text-white">${item.count}</span>
+                                    </div>
+                                </div>
+                            `).join('');
+                        }
+                    }
+
+                    if (gpsCategoryTotal) {
+                        const totalGpsSites = legendItems.reduce((sum, item) => sum + item.count, 0);
+                        gpsCategoryTotal.textContent = `${totalGpsSites} site${totalGpsSites > 1 ? 's' : ''} avec GPS`;
+                    }
                 }
 
                 currentSitesData = sites; // Stocker pour l'export
@@ -1162,34 +1503,41 @@
         // Ajouter des écouteurs d'événements sur tous les filtres
         provinceSelect.addEventListener('change', function() {
             applyFilters();
+            updateDashboardExportLinks();
         });
 
         territoireSelect.addEventListener('change', function() {
             applyFilters();
+            updateDashboardExportLinks();
         });
 
         communeSelect.addEventListener('change', function() {
             applyFilters();
+            updateDashboardExportLinks();
         });
 
         siteSelect.addEventListener('change', function() {
             applyFilters();
+            updateDashboardExportLinks();
         });
 
         coordinateurSelect.addEventListener('change', function() {
             applyFilters();
+            updateDashboardExportLinks();
         });
 
         gestionnaireSelect.addEventListener('change', function() {
             applyFilters();
+            updateDashboardExportLinks();
         });
 
         categorieSiteSelect.addEventListener('change', function() {
             applyFilters();
+            updateDashboardExportLinks();
         });
 
         periodeSelect?.addEventListener('change', function() {
-            const normalized = normalizePeriodInput(this.value);
+            const normalized = normalizeAndClampPeriodInput(this.value);
             if (!/^(0[1-9]|1[0-2])\/\d{4}$/.test(normalized)) {
                 this.value = defaultPeriodValue;
                 return;
@@ -1197,11 +1545,13 @@
 
             this.value = normalized;
             applyFilters();
+            updateDashboardExportLinks();
         });
 
         periodeSelect?.addEventListener('blur', function() {
-            const normalized = normalizePeriodInput(this.value);
+            const normalized = normalizeAndClampPeriodInput(this.value);
             this.value = /^(0[1-9]|1[0-2])\/\d{4}$/.test(normalized) ? normalized : defaultPeriodValue;
+            updateDashboardExportLinks();
         });
 
         // Bouton pour recentrer la carte
@@ -1238,39 +1588,41 @@
             
             // Recharger la carte et les stats avec tous les sites
             applyFilters();
+            updateDashboardExportLinks();
         });
 
         // Fonction pour mettre à jour les statistiques avec les filtres actifs
         function updateStatsWithFilters() {
-            const formatDeltaText = (delta) => {
+            const formatDeltaText = (delta, comparisonReferenceLabel) => {
                 const value = delta?.value ?? 0;
                 const percent = delta?.percent;
+                const reference = comparisonReferenceLabel || 'aucune période antérieure disponible';
 
                 if (value > 0) {
-                    return `↑ Différence: +${value.toLocaleString('fr-FR')}${percent !== null && percent !== undefined ? ` (+${percent}%)` : ''} vs mois précédent`;
+                    return `↑ Différence: +${value.toLocaleString('fr-FR')}${percent !== null && percent !== undefined ? ` (+${percent}%)` : ''} vs ${reference}`;
                 }
 
                 if (value < 0) {
-                    return `↓ Différence: ${value.toLocaleString('fr-FR')}${percent !== null && percent !== undefined ? ` (${percent}%)` : ''} vs mois précédent`;
+                    return `↓ Différence: ${value.toLocaleString('fr-FR')}${percent !== null && percent !== undefined ? ` (${percent}%)` : ''} vs ${reference}`;
                 }
 
-                return '→ Différence: 0 vs mois précédent';
+                return `→ Différence: 0 vs ${reference}`;
             };
 
-            const updateDeltaElement = (id, delta) => {
+            const updateDeltaElement = (id, delta, comparisonReferenceLabel) => {
                 const el = document.getElementById(id);
                 if (!el) return;
 
                 const value = delta?.value ?? 0;
-                el.textContent = formatDeltaText(delta);
+                el.textContent = formatDeltaText(delta, comparisonReferenceLabel);
 
-                el.classList.remove('text-green-600', 'dark:text-green-400', 'text-red-600', 'dark:text-red-400', 'text-gray-500', 'dark:text-gray-400');
+                el.classList.remove('text-green-600', 'dark:text-green-400', 'text-red-600', 'dark:text-red-400', 'text-gray-500', 'dark:text-gray-400', 'text-orange-600', 'dark:text-orange-400');
                 if (value > 0) {
-                    el.classList.add('text-green-600', 'dark:text-green-400');
-                } else if (value < 0) {
                     el.classList.add('text-red-600', 'dark:text-red-400');
+                } else if (value < 0) {
+                    el.classList.add('text-green-600', 'dark:text-green-400');
                 } else {
-                    el.classList.add('text-gray-500', 'dark:text-gray-400');
+                    el.classList.add('text-orange-600', 'dark:text-orange-400');
                 }
             };
 
@@ -1283,12 +1635,29 @@
             if (coordinateurSelect.value) params.append('coordinateur_id', coordinateurSelect.value);
             if (gestionnaireSelect.value) params.append('gestionnaire_id', gestionnaireSelect.value);
             if (categorieSiteSelect.value) params.append('categorie_site_id', categorieSiteSelect.value);
-            const normalizedPeriod = normalizePeriodInput(periodeSelect?.value || '');
+            const normalizedPeriod = normalizeAndClampPeriodInput(periodeSelect?.value || '');
             if (normalizedPeriod) params.append('periode', normalizedPeriod);
 
             fetch(`/api/dashboard/stats?${params.toString()}`)
                 .then(response => response.json())
                 .then(data => {
+                    if (dashboardPeriodNote) {
+                        dashboardPeriodNote.textContent = data.fallback_note || '';
+                        dashboardPeriodNote.style.display = data.fallback_note ? 'block' : 'none';
+                    }
+
+                    const currentComparisonPeriod = data.periode_comparaison_courante || data.periode_consideree || data.periode || normalizedPeriod || defaultConsideredPeriodValue || defaultPeriodValue;
+                    const referenceComparisonPeriod = data.periode_comparaison_reference || defaultComparisonReferencePeriod || null;
+                    const comparisonReferenceLabel = referenceComparisonPeriod || 'aucune période antérieure disponible';
+
+                    if (dashboardConsideredPeriod) {
+                        dashboardConsideredPeriod.textContent = `Données considérées: ${data.periode_consideree || data.periode || defaultPeriodValue}`;
+                    }
+
+                    if (dashboardComparisonPeriod) {
+                        dashboardComparisonPeriod.textContent = `Comparaison: ${currentComparisonPeriod} vs ${comparisonReferenceLabel}`;
+                    }
+
                     // Mettre à jour les cartes de statistiques
                     document.getElementById('stat-total-pdi').textContent = data.stats.total_pdi.toLocaleString('fr-FR');
                     document.getElementById('stat-hommes').textContent = data.stats.hommes.toLocaleString('fr-FR');
@@ -1299,52 +1668,64 @@
                     document.getElementById('stat-adultes').textContent = data.stats.adultes.toLocaleString('fr-FR');
                     document.getElementById('stat-ages').textContent = data.stats.personnes_agees.toLocaleString('fr-FR');
 
-                    updateDeltaElement('stat-total-pdi-delta', data.deltas?.total_pdi);
-                    updateDeltaElement('stat-hommes-delta', data.deltas?.hommes);
-                    updateDeltaElement('stat-femmes-delta', data.deltas?.femmes);
-                    updateDeltaElement('stat-handicap-delta', data.deltas?.personnes_handicap);
-                    updateDeltaElement('stat-menages-delta', data.deltas?.menages);
-                    updateDeltaElement('stat-enfants-delta', data.deltas?.enfants);
-                    updateDeltaElement('stat-adultes-delta', data.deltas?.adultes);
-                    updateDeltaElement('stat-ages-delta', data.deltas?.personnes_agees);
+                    updateDeltaElement('stat-total-pdi-delta', data.deltas?.total_pdi, comparisonReferenceLabel);
+                    updateDeltaElement('stat-hommes-delta', data.deltas?.hommes, comparisonReferenceLabel);
+                    updateDeltaElement('stat-femmes-delta', data.deltas?.femmes, comparisonReferenceLabel);
+                    updateDeltaElement('stat-handicap-delta', data.deltas?.personnes_handicap, comparisonReferenceLabel);
+                    updateDeltaElement('stat-menages-delta', data.deltas?.menages, comparisonReferenceLabel);
+                    updateDeltaElement('stat-enfants-delta', data.deltas?.enfants, comparisonReferenceLabel);
+                    updateDeltaElement('stat-adultes-delta', data.deltas?.adultes, comparisonReferenceLabel);
+                    updateDeltaElement('stat-ages-delta', data.deltas?.personnes_agees, comparisonReferenceLabel);
 
                     // Mettre à jour le graphique par âge
-                    ageChart.updateSeries([{
-                        name: 'Population',
-                        data: [
-                            data.age_distribution['0-5 ans'],
-                            data.age_distribution['6-17 ans'],
-                            data.age_distribution['18-59 ans'],
-                            data.age_distribution['60+ ans']
-                        ]
-                    }]);
+                    if (ageChart) {
+                        ageChart.updateSeries([{
+                            name: 'Population',
+                            data: [
+                                data.age_distribution['0-5 ans'],
+                                data.age_distribution['6-17 ans'],
+                                data.age_distribution['18-59 ans'],
+                                data.age_distribution['60+ ans']
+                            ]
+                        }]);
+                    }
 
                     // Mettre à jour le graphique par genre
-                    genderChart.updateSeries([
-                        data.gender_distribution.femmes,
-                        data.gender_distribution.hommes
-                    ]);
-                })
-                .catch(error => {
-                    console.error('Erreur lors du chargement des statistiques:', error);
-                });
+                    if (genderChart) {
+                        genderChart.updateSeries([
+                            data.gender_distribution.femmes,
+                            data.gender_distribution.hommes
+                        ]);
+                    }
 
-            // Mettre à jour la distribution provinciale
-            fetch(`/api/dashboard/province-distribution?${params.toString()}`)
-                .then(response => response.json())
-                .then(data => {
-                    provinceChart.updateOptions({
-                        xaxis: {
-                            categories: data.provinces
-                        }
-                    });
-                    provinceChart.updateSeries([{
-                        name: 'Population',
-                        data: data.values
-                    }]);
+                    const provinceParams = new URLSearchParams(params.toString());
+                    const effectivePeriod = data.periode_consideree || normalizedPeriod;
+                    if (effectivePeriod) {
+                        provinceParams.set('periode', effectivePeriod);
+                    }
+
+                    return fetch(`/api/dashboard/province-distribution?${provinceParams.toString()}`)
+                        .then(response => response.json())
+                        .then(provinceData => {
+                            if (dashboardConsideredPeriod) {
+                                dashboardConsideredPeriod.textContent = `Données considérées: ${provinceData.periode_consideree || effectivePeriod || defaultPeriodValue}`;
+                            }
+
+                            if (provinceChart) {
+                                provinceChart.updateOptions({
+                                    xaxis: {
+                                        categories: provinceData.provinces
+                                    }
+                                });
+                                provinceChart.updateSeries([{
+                                    name: 'Population',
+                                    data: provinceData.values
+                                }]);
+                            }
+                        });
                 })
                 .catch(error => {
-                    console.error('Erreur lors du chargement de la distribution provinciale:', error);
+                    console.error('Erreur lors du chargement des statistiques / distribution provinciale:', error);
                 });
         }
 

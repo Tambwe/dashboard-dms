@@ -49,17 +49,52 @@
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Informations du mouvement</h3>
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Sélection géographique en cascade -->
+                <div>
+                    <label for="site_province" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Province <span class="text-red-500">*</span>
+                    </label>
+                    <select id="site_province" required
+                            class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:border-primary-500 focus:ring-primary-500">
+                        <option value="">Sélectionnez une province</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="site_territoire" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Territoire <span class="text-red-500">*</span>
+                    </label>
+                    <select id="site_territoire" required disabled
+                            class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:border-primary-500 focus:ring-primary-500 disabled:opacity-60">
+                        <option value="">Sélectionnez d'abord une province</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="site_zone_sante" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Zone de santé <span class="text-red-500">*</span>
+                    </label>
+                    <select id="site_zone_sante" required disabled
+                            class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:border-primary-500 focus:ring-primary-500 disabled:opacity-60">
+                        <option value="">Sélectionnez d'abord un territoire</option>
+                    </select>
+                </div>
+
                 <!-- Site -->
-                <div class="md:col-span-2">
+                <div>
                     <label for="site_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Site <span class="text-red-500">*</span>
                     </label>
-                    <select id="site_id" name="site_id" required 
-                            class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:border-primary-500 focus:ring-primary-500">
-                        <option value="">Sélectionnez un site</option>
+                    <select id="site_id" name="site_id" required disabled
+                            class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:border-primary-500 focus:ring-primary-500 disabled:opacity-60">
+                        <option value="">Sélectionnez d'abord une zone de santé</option>
                         @foreach($sites as $site)
-                            <option value="{{ $site->id }}" {{ old('site_id') == $site->id ? 'selected' : '' }}>
-                                {{ $site->nom }} ({{ $site->code_site }})
+                            <option value="{{ $site->id }}"
+                                    data-province="{{ $site->province }}"
+                                    data-territoire="{{ $site->territoire }}"
+                                    data-zone-sante="{{ $site->zone_sante }}"
+                                    {{ old('site_id') == $site->id ? 'selected' : '' }}>
+                                {{ $site->nom }} ({{ $site->code_site }}){{ $site->date_fermeture ? ' [Site fermé]' : '' }}
                             </option>
                         @endforeach
                     </select>
@@ -302,6 +337,105 @@ document.addEventListener('DOMContentLoaded', function() {
     const infoTypeMouvement = document.getElementById('info-type-mouvement');
     const ageInputs = document.querySelectorAll('.age-input');
     const individusInput = document.getElementById('individus');
+    const provinceSelect = document.getElementById('site_province');
+    const territoireSelect = document.getElementById('site_territoire');
+    const zoneSanteSelect = document.getElementById('site_zone_sante');
+    const siteSelect = document.getElementById('site_id');
+    const missingValue = '__non_renseigne__';
+    const selectedSiteId = @json((string) old('site_id', ''));
+    const sites = Array.from(siteSelect.querySelectorAll('option[value]'))
+        .filter(option => option.value)
+        .map(option => ({
+            id: option.value,
+            label: option.textContent.trim(),
+            province: option.dataset.province?.trim() || missingValue,
+            territoire: option.dataset.territoire?.trim() || missingValue,
+            zoneSante: option.dataset.zoneSante?.trim() || missingValue,
+        }));
+
+    function dimensionLabel(value) {
+        return value === missingValue ? 'Non renseigné' : value;
+    }
+
+    function uniqueValues(values) {
+        return [...new Set(values)].sort((left, right) =>
+            dimensionLabel(left).localeCompare(dimensionLabel(right), 'fr', { sensitivity: 'base' })
+        );
+    }
+
+    function fillSelect(select, values, placeholder, selectedValue = '') {
+        select.replaceChildren(new Option(placeholder, ''));
+        values.forEach(value => {
+            select.appendChild(new Option(dimensionLabel(value), value, false, value === selectedValue));
+        });
+        select.disabled = values.length === 0;
+    }
+
+    function resetSites() {
+        siteSelect.replaceChildren(new Option("Sélectionnez d'abord une zone de santé", ''));
+        siteSelect.disabled = true;
+    }
+
+    function loadSites(selectedValue = '') {
+        const filteredSites = sites
+            .filter(site =>
+                site.province === provinceSelect.value
+                && site.territoire === territoireSelect.value
+                && site.zoneSante === zoneSanteSelect.value
+            )
+            .sort((left, right) => left.label.localeCompare(right.label, 'fr', { sensitivity: 'base' }));
+
+        siteSelect.replaceChildren(new Option('Sélectionnez un site', ''));
+        filteredSites.forEach(site => {
+            siteSelect.appendChild(new Option(site.label, site.id, false, site.id === selectedValue));
+        });
+        siteSelect.disabled = filteredSites.length === 0;
+    }
+
+    function loadZones(selectedValue = '') {
+        const zones = uniqueValues(
+            sites
+                .filter(site => site.province === provinceSelect.value && site.territoire === territoireSelect.value)
+                .map(site => site.zoneSante)
+        );
+        fillSelect(zoneSanteSelect, zones, 'Sélectionnez une zone de santé', selectedValue);
+        resetSites();
+    }
+
+    function loadTerritoires(selectedValue = '') {
+        const territoires = uniqueValues(
+            sites
+                .filter(site => site.province === provinceSelect.value)
+                .map(site => site.territoire)
+        );
+        fillSelect(territoireSelect, territoires, 'Sélectionnez un territoire', selectedValue);
+        fillSelect(zoneSanteSelect, [], "Sélectionnez d'abord un territoire");
+        resetSites();
+    }
+
+    fillSelect(provinceSelect, uniqueValues(sites.map(site => site.province)), 'Sélectionnez une province');
+
+    provinceSelect.addEventListener('change', function() {
+        loadTerritoires();
+    });
+
+    territoireSelect.addEventListener('change', function() {
+        loadZones();
+    });
+
+    zoneSanteSelect.addEventListener('change', function() {
+        loadSites();
+    });
+
+    if (selectedSiteId) {
+        const selectedSite = sites.find(site => site.id === selectedSiteId);
+        if (selectedSite) {
+            provinceSelect.value = selectedSite.province;
+            loadTerritoires(selectedSite.territoire);
+            loadZones(selectedSite.zoneSante);
+            loadSites(selectedSite.id);
+        }
+    }
 
     // Gérer l'affichage des raisons selon le type de mouvement
     typeMouvementSelect.addEventListener('change', function() {

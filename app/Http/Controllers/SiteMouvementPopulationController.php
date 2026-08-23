@@ -6,6 +6,8 @@ use App\Models\Site;
 use App\Models\SiteMouvementPopulation;
 use App\Models\CategorieMouvement;
 use App\Models\RaisonMouvement;
+use App\Services\SitePopulationService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -23,7 +25,7 @@ class SiteMouvementPopulationController extends Controller
     /**
      * Récupère l'historique des mouvements d'un site
      */
-    public function index(Request $request)
+    public function index(Request $request, bool $historyMode = false)
     {
         $user = auth()->user();
         $siteId = $request->input('site_id');
@@ -36,7 +38,12 @@ class SiteMouvementPopulationController extends Controller
         // Résoudre les IDs de sites accessibles pour l'utilisateur
         $allowedSiteIds = $this->getAccessibleSiteIdsForUser($user);
 
-        $query = SiteMouvementPopulation::with(['site', 'createdBy', 'validatedBy', 'raisonMouvement']);
+        $query = SiteMouvementPopulation::with([
+            'site.commune.territoire.province',
+            'createdBy',
+            'validatedBy',
+            'raisonMouvement',
+        ]);
         
         if ($allowedSiteIds !== null) {
             $query->whereIn('site_id', $allowedSiteIds);
@@ -66,7 +73,8 @@ class SiteMouvementPopulationController extends Controller
         
         $mouvements = $query->orderBy('date_mouvement', 'desc')
             ->orderBy('created_at', 'desc')
-            ->paginate(50);
+            ->paginate(50)
+            ->withQueryString();
         
         if ($request->expectsJson()) {
             return response()->json($mouvements);
@@ -77,9 +85,26 @@ class SiteMouvementPopulationController extends Controller
         if ($allowedSiteIds !== null) {
             $sitesQuery->whereIn('id', $allowedSiteIds);
         }
-        $sites = $sitesQuery->orderBy('nom')->get(['id', 'nom', 'code_site']);
+        $sites = $sitesQuery
+            ->with('commune.territoire.province')
+            ->orderBy('nom')
+            ->get([
+                'id',
+                'nom',
+                'code_site',
+                'province',
+                'territoire',
+                'zone_sante',
+                'commune_id',
+                'date_fermeture',
+            ]);
         
-        return view('admin.mouvements.index', compact('mouvements', 'sites'));
+        return view('admin.mouvements.index', compact('mouvements', 'sites', 'historyMode'));
+    }
+
+    public function history(Request $request)
+    {
+        return $this->index($request, true);
     }
 
     /**
@@ -218,24 +243,29 @@ class SiteMouvementPopulationController extends Controller
     /**
      * Récupère les statistiques de mouvements pour un site
      */
-    public function statistics(Request $request, $siteId)
+    public function statistics(Request $request, $siteId, SitePopulationService $populationService)
     {
         $site = Site::findOrFail($siteId);
         
         $dateDebut = $request->input('date_debut');
         $dateFin = $request->input('date_fin');
         
-        $query = SiteMouvementPopulation::where('site_id', $siteId);
+        $query = SiteMouvementPopulation::where('site_id', $siteId)
+            ->where('statut', 'valide');
         
         if ($dateDebut && $dateFin) {
             $query->whereBetween('date_mouvement', [$dateDebut, $dateFin]);
         }
         
+        $population = $populationService->forSite(
+            (int) $siteId,
+            $dateFin ? Carbon::parse($dateFin)->endOfDay() : null
+        );
         $stats = [
             'site' => $site->only(['id', 'nom', 'code_site']),
             'population_actuelle' => [
-                'menages' => $site->menages,
-                'individus' => $site->individus,
+                'menages' => $population['menages'],
+                'individus' => $population['individus'],
             ],
             'mouvements' => [
                 'total' => $query->count(),
@@ -314,6 +344,24 @@ class SiteMouvementPopulationController extends Controller
             if ($mouvement->statut !== 'en_attente') {
                 throw new \Exception('Ce mouvement a déjà été traité (statut: ' . $mouvement->statut . ')');
             }
+
+            $site = Site::query()->lockForUpdate()->findOrFail($mouvement->site_id);
+            $negativeProjections = app(SitePopulationService::class)->negativeProjections(
+                (int) $mouvement->site_id,
+                $mouvement->only(SitePopulationService::FIELDS),
+                $mouvement->type_mouvement
+            );
+            if ($negativeProjections !== []) {
+                $violation = $negativeProjections[0];
+                throw new \DomainException(sprintf(
+                    'Validation refusée pour %s : %s disponible = %d, mouvement = %d, solde projeté = %d.',
+                    $site->nom,
+                    $violation['label'],
+                    $violation['current'],
+                    $violation['movement'],
+                    $violation['projected']
+                ));
+            }
             
             // Mettre à jour le mouvement
             $mouvement->update([
@@ -322,38 +370,8 @@ class SiteMouvementPopulationController extends Controller
                 'validated_by' => $user->id,
             ]);
             
-            // Mettre à jour les populations du site
-            $site = Site::findOrFail($mouvement->site_id);
-            
-            if ($mouvement->type_mouvement === 'recensement') {
-                // Pour un recensement, remplacer les valeurs (utiliser les valeurs absolues)
-                $site->update([
-                    'menages' => abs($mouvement->menages),
-                    'individus' => abs($mouvement->individus),
-                    'f_0_5' => abs($mouvement->f_0_5),
-                    'f_6_17' => abs($mouvement->f_6_17),
-                    'f_18_59' => abs($mouvement->f_18_59),
-                    'f_60_plus' => abs($mouvement->f_60_plus),
-                    'h_0_5' => abs($mouvement->h_0_5),
-                    'h_6_17' => abs($mouvement->h_6_17),
-                    'h_18_59' => abs($mouvement->h_18_59),
-                    'h_60_plus' => abs($mouvement->h_60_plus),
-                    'date_mise_a_jour' => $mouvement->date_mouvement,
-                ]);
-            } else {
-                // Pour arrivée/départ/ajustement, additionner les valeurs (qui peuvent être négatives)
-                $site->increment('menages', $mouvement->menages);
-                $site->increment('individus', $mouvement->individus);
-                $site->increment('f_0_5', $mouvement->f_0_5);
-                $site->increment('f_6_17', $mouvement->f_6_17);
-                $site->increment('f_18_59', $mouvement->f_18_59);
-                $site->increment('f_60_plus', $mouvement->f_60_plus);
-                $site->increment('h_0_5', $mouvement->h_0_5);
-                $site->increment('h_6_17', $mouvement->h_6_17);
-                $site->increment('h_18_59', $mouvement->h_18_59);
-                $site->increment('h_60_plus', $mouvement->h_60_plus);
-                $site->update(['date_mise_a_jour' => $mouvement->date_mouvement]);
-            }
+            // Le registre validé est l'unique source des statistiques de population.
+            $site->update(['date_mise_a_jour' => $mouvement->date_mouvement]);
             
             DB::commit();
             
@@ -365,7 +383,7 @@ class SiteMouvementPopulationController extends Controller
                 ]);
             }
             
-            return back()->with('success', 'Mouvement validé avec succès! Les populations du site ont été mises à jour.');
+            return back()->with('success', 'Mouvement validé avec succès. Les statistiques sont recalculées depuis le registre.');
             
         } catch (\Exception $e) {
             DB::rollBack();
@@ -898,22 +916,26 @@ class SiteMouvementPopulationController extends Controller
     /**
      * Récupère les IDs de sites accessibles pour un utilisateur.
      *
-     * - super_admin: accès total (null = pas de restriction)
-     * - autres rôles: uniquement les sites de leur organisation
+     * - super admin et SIG: accès total (null = pas de restriction)
+     * - admin organisation: sites de son organisation
+     * - utilisateur: sites explicitement attribués
      */
     private function getAccessibleSiteIdsForUser($user)
     {
-        if ($user->role === 'super_admin') {
+        if ($user->isSuperAdmin() || $user->isSigUser()) {
             return null;
         }
 
-        if ($user->organisation_id) {
+        if ($user->isAdminOrganisation() && $user->organisation_id) {
             return Site::where('organisation_id', $user->organisation_id)
                 ->pluck('id')
                 ->unique()
                 ->values();
-        } else {
-            return collect();
         }
+
+        return $user->assignedSites()
+            ->pluck('sites.id')
+            ->unique()
+            ->values();
     }
 }

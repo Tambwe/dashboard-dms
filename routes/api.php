@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\GeographicController;
 use App\Http\Controllers\Api\DashboardStatsController;
+use App\Http\Controllers\Api\MobileAuthController;
 use App\Http\Controllers\SiteMouvementPopulationController;
 
 /*
@@ -20,6 +21,8 @@ use App\Http\Controllers\SiteMouvementPopulationController;
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
+
+Route::post('/login', [MobileAuthController::class, 'login']);
 
 // Routes API publiques pour les statistiques du dashboard
 Route::prefix('dashboard')->group(function () {

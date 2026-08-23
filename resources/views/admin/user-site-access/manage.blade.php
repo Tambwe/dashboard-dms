@@ -188,7 +188,7 @@
                                         data-province="{{ $site->province }}"
                                         data-territoire="{{ $site->territoire }}"
                                         data-commune="{{ $site->commune ? $site->commune->nom : '' }}">
-                                    {{ $site->nom }} - {{ $site->territoire }}, {{ $site->province }}
+                                    {{ $site->nom }}{{ $site->date_fermeture ? ' [Site fermé]' : '' }} - {{ $site->territoire }}, {{ $site->province }}
                                     @if($site->organisation)
                                         ({{ $site->organisation->name }})
                                     @endif

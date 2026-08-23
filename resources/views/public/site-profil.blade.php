@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=inter:400,500,600,700&display=swap" rel="stylesheet" />
     <x-vite-manifest-loader :assets="['resources/css/app.css', 'resources/js/app.js']" />
+    <x-sweetalert-flash />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     <style>
         .section-tab { scroll-margin-top: 80px; }
@@ -71,7 +72,7 @@
             <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Profil des sites d'accueil</h1>
             <p class="text-sm text-gray-500 dark:text-gray-400 mb-5">Sélectionnez un site pour consulter son état des lieux (OSSAT)</p>
 
-            <form method="GET" action="#" id="site-selector-form" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <form method="GET" action="#" id="site-selector-form" class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
                 {{-- Province --}}
                 <div>
                     <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Province</label>
@@ -91,11 +92,18 @@
                         <option value="">— Sélectionner la province —</option>
                     </select>
                 </div>
+                {{-- Zone de sante --}}
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Zone de santé</label>
+                    <select id="sel_commune" class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500">
+                        <option value="">— Sélectionner le territoire —</option>
+                    </select>
+                </div>
                 {{-- Site --}}
                 <div>
                     <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Site</label>
                     <select id="sel_site" class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500">
-                        <option value="">— Sélectionner le territoire —</option>
+                        <option value="">— Sélectionner la zone de santé —</option>
                     </select>
                 </div>
                 {{-- Bouton --}}
@@ -116,7 +124,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
             </svg>
             <h3 class="text-lg font-semibold text-gray-500 dark:text-gray-400">Sélectionnez un site pour voir son profil</h3>
-            <p class="text-sm text-gray-400 mt-1">Utilisez les filtres ci-dessus pour naviguer par province, territoire et site.</p>
+            <p class="text-sm text-gray-400 mt-1">Utilisez les filtres ci-dessus pour naviguer par province, territoire, zone de santé et site.</p>
         </div>
 
         @else
@@ -976,6 +984,7 @@ function toggleDarkMode() {
 // ── Cascade selectors ──
 const selProv  = document.getElementById('sel_province');
 const selTerr  = document.getElementById('sel_territoire');
+const selComm  = document.getElementById('sel_commune');
 const selSite  = document.getElementById('sel_site');
 const btnVoir  = document.getElementById('btn_voir_profil');
 const form     = document.getElementById('site-selector-form');
@@ -984,18 +993,29 @@ const form     = document.getElementById('site-selector-form');
 // Pré-remplissage si un site est déjà affiché
 const initProvinceId   = {{ $site->commune?->territoire?->province_id ?? 'null' }};
 const initTerritoireId = {{ $site->commune?->territoire_id ?? 'null' }};
+const initCommuneId    = @json($site->commune_id ? ('commune:' . $site->commune_id) : ($site->zone_sante ? ('zone:' . $site->zone_sante) : null));
 const initSiteId       = {{ $site->id }};
 @else
 const initProvinceId   = null;
 const initTerritoireId = null;
+const initCommuneId    = null;
 const initSiteId       = null;
 @endisset
 
-function loadTerritoires(provinceId, callback) {
+function resetCommuneSelect(placeholder) {
+    selComm.innerHTML = `<option value="">${placeholder}</option>`;
+}
+
+function resetSiteSelect(placeholder) {
+    selSite.innerHTML = `<option value="">${placeholder}</option>`;
+    btnVoir.disabled = true;
+}
+
+function loadTerritoires(provinceId, selectedTerritoireId = null, callback = null) {
     if (!provinceId) {
         selTerr.innerHTML = '<option value="">— Sélectionner la province —</option>';
-        selSite.innerHTML = '<option value="">— Sélectionner le territoire —</option>';
-        btnVoir.disabled = true;
+        resetCommuneSelect('— Sélectionner le territoire —');
+        resetSiteSelect('— Sélectionner la zone de santé —');
         return;
     }
     fetch('/api/public/territoires?province_id=' + provinceId)
@@ -1004,26 +1024,55 @@ function loadTerritoires(provinceId, callback) {
             selTerr.innerHTML = '<option value="">— Territoire —</option>';
             data.forEach(function(t) {
                 const opt = new Option(t.name, t.id);
-                if (initTerritoireId && t.id == initTerritoireId) opt.selected = true;
+                if (selectedTerritoireId && t.id == selectedTerritoireId) opt.selected = true;
                 selTerr.appendChild(opt);
             });
             if (callback) callback();
         });
 }
 
-function loadSites(territoireId) {
+function loadCommunes(territoireId, selectedCommuneId = null, callback = null) {
     if (!territoireId) {
-        selSite.innerHTML = '<option value="">— Sélectionner le territoire —</option>';
-        btnVoir.disabled = true;
+        resetCommuneSelect('— Sélectionner le territoire —');
+        resetSiteSelect('— Sélectionner la zone de santé —');
         return;
     }
-    fetch('/api/public/sites?territoire_id=' + territoireId)
+
+    fetch('/api/public/communes?territoire_id=' + territoireId)
+        .then(r => r.json())
+        .then(function(data) {
+            selComm.innerHTML = '<option value="">— Zone de santé —</option>';
+            data.forEach(function(c) {
+                const opt = new Option(c.name, c.id);
+                if (selectedCommuneId && c.id == selectedCommuneId) opt.selected = true;
+                selComm.appendChild(opt);
+            });
+            if (callback) callback();
+        });
+}
+
+function loadSites(communeId, territoireId = null, selectedSiteId = null) {
+    if (!communeId && !territoireId) {
+        resetSiteSelect('— Sélectionner la zone de santé —');
+        return;
+    }
+
+    const params = new URLSearchParams();
+    if (territoireId) {
+        params.set('territoire_id', territoireId);
+    }
+
+    if (communeId) {
+        params.set('commune_id', communeId);
+    }
+
+    fetch('/api/public/sites?' + params.toString())
         .then(r => r.json())
         .then(function(data) {
             selSite.innerHTML = '<option value="">— Site —</option>';
             data.forEach(function(s) {
                 const opt = new Option(s.nom + (s.code_site ? ' (' + s.code_site + ')' : ''), s.id);
-                if (initSiteId && s.id == initSiteId) opt.selected = true;
+                if (selectedSiteId && s.id == selectedSiteId) opt.selected = true;
                 selSite.appendChild(opt);
             });
             btnVoir.disabled = !selSite.value;
@@ -1031,11 +1080,15 @@ function loadSites(territoireId) {
 }
 
 selProv.addEventListener('change', function() {
-    loadTerritoires(this.value, null);
+    loadTerritoires(this.value);
 });
 
 selTerr.addEventListener('change', function() {
-    loadSites(this.value);
+    loadCommunes(this.value);
+});
+
+selComm.addEventListener('change', function() {
+    loadSites(this.value, selTerr.value || null);
 });
 
 selSite.addEventListener('change', function() {
@@ -1050,8 +1103,10 @@ form.addEventListener('submit', function(e) {
 
 // Initialisation cascade au chargement si pré-sélection
 if (initProvinceId) {
-    loadTerritoires(initProvinceId, function() {
-        loadSites(initTerritoireId);
+    loadTerritoires(initProvinceId, initTerritoireId, function() {
+        loadCommunes(initTerritoireId, initCommuneId, function() {
+            loadSites(initCommuneId, initTerritoireId, initSiteId);
+        });
     });
 }
 

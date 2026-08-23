@@ -10,15 +10,22 @@ use App\Models\Coordinateur;
 use App\Models\CategorieSite;
 use App\Models\Commune;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class SitesSeeder extends Seeder
 {
+    private array $siteTableColumns = [];
+
     /**
      * Run the database seeds.
      */
     public function run(): void
     {
         echo "Importation des sites PDI...\n";
+        $this->siteTableColumns = Schema::getColumnListing('sites');
 
         // Vider les tables dans le bon ordre (enfants avant parents)
         echo "Nettoyage des tables existantes...\n";
@@ -28,30 +35,286 @@ class SitesSeeder extends Seeder
         Coordinateur::query()->delete();
         CategorieSite::query()->delete();
 
-        // Étape 1 : Importer les catégories de sites
-        echo "Étape 1/5 : Importation des catégories de sites...\n";
-        $this->importCategoriesSites();
+        $xlsxPath = $this->getMasterListXlsxPath();
+        if (file_exists($xlsxPath)) {
+            echo "Source détectée: fichier XLSX ($xlsxPath)\n";
+            $workbook = IOFactory::load($xlsxPath);
+            $this->importFromWorkbook($workbook);
+        } else {
+            // Étape 1 : Importer les catégories de sites
+            echo "Étape 1/5 : Importation des catégories de sites...\n";
+            $this->importCategoriesSites();
 
-        // Étape 2 : Importer les types de sites
-        echo "Étape 2/5 : Importation des types de sites...\n";
-        $this->importTypesSites();
+            // Étape 2 : Importer les types de sites
+            echo "Étape 2/5 : Importation des types de sites...\n";
+            $this->importTypesSites();
 
-        // Étape 3 : Importer les gestionnaires
-        echo "Étape 3/5 : Importation des gestionnaires...\n";
-        $this->importGestionnaires();
+            // Étape 3 : Importer les gestionnaires
+            echo "Étape 3/5 : Importation des gestionnaires...\n";
+            $this->importGestionnaires();
 
-        // Étape 4 : Importer les coordinateurs
-        echo "Étape 4/5 : Importation des coordinateurs...\n";
-        $this->importCoordinateurs();
+            // Étape 4 : Importer les coordinateurs
+            echo "Étape 4/5 : Importation des coordinateurs...\n";
+            $this->importCoordinateurs();
 
-        // Étape 5 : Importer les sites depuis les 3 fichiers
-        echo "Étape 5/5 : Importation des sites...\n";
-        $this->importSitesFromFile('H:\\PDIs EN COMMUNAUTÉS HÔTES.csv', 'PDIs EN COMMUNAUTÉS HÔTES');
-        $this->importSitesFromFile('H:\\SITE SOUS GESTION.csv', 'SITES SOUS GESTION');
-        $this->importSitesFromFile('H:\\SITESHORSGESTION.csv', 'SITES HORS GESTION');
+            // Étape 5 : Importer les sites depuis les 3 fichiers
+            echo "Étape 5/5 : Importation des sites...\n";
+            $this->importSitesFromFile('H:\\PDIs EN COMMUNAUTÉS HÔTES.csv', 'PDIs EN COMMUNAUTÉS HÔTES');
+            $this->importSitesFromFile('H:\\SITE SOUS GESTION.csv', 'SITES SOUS GESTION');
+            $this->importSitesFromFile('H:\\SITESHORSGESTION.csv', 'SITES HORS GESTION');
+        }
 
         echo "\nImportation terminée avec succès !\n";
         echo "Total des sites importés : " . Site::count() . "\n";
+    }
+
+    private function getMasterListXlsxPath(): string
+    {
+        return env('SITES_MASTERLIST_XLSX', 'H:\\20260805_CCCM Master List_DRC_31_Juillet_2026.xlsx');
+    }
+
+    private function importFromWorkbook(Spreadsheet $workbook): void
+    {
+        echo "Étape 1/5 : Importation des catégories de sites...\n";
+        $this->importCategoriesSitesFromWorkbook($workbook);
+
+        echo "Étape 2/5 : Importation des types de sites...\n";
+        $this->importTypesSitesFromWorkbook($workbook);
+
+        echo "Étape 3/5 : Importation des gestionnaires...\n";
+        $this->importGestionnairesFromWorkbook($workbook);
+
+        echo "Étape 4/5 : Importation des coordinateurs...\n";
+        $this->importCoordinateursFromWorkbook($workbook);
+
+        echo "Étape 5/5 : Importation des sites...\n";
+        $pdiSheet = $this->findSheetByKeywords($workbook, ['PDIS EN COMMUNAUT', 'HOTES'], ['DEC23']);
+        $gestionSheet = $this->findSheetByKeywords($workbook, ['SITES SOUS GESTION']);
+        $horsGestionSheet = $this->findSheetByKeywords($workbook, ['SITES HORS GESTION']);
+
+        if (! $pdiSheet) {
+            $pdiSheet = $workbook->getSheetByName('PDIs EN COMMUNAUTÉS HÔTES');
+        }
+        if (! $gestionSheet) {
+            $gestionSheet = $workbook->getSheetByName('SITES SOUS GESTION');
+        }
+        if (! $horsGestionSheet) {
+            $horsGestionSheet = $workbook->getSheetByName('SITES HORS GESTION');
+        }
+
+        if ($pdiSheet) {
+            $this->importSitesFromWorksheet($pdiSheet, 'PDIs EN COMMUNAUTÉS HÔTES');
+        }
+        if ($gestionSheet) {
+            $this->importSitesFromWorksheet($gestionSheet, 'SITES SOUS GESTION');
+        }
+        if ($horsGestionSheet) {
+            $this->importSitesFromWorksheet($horsGestionSheet, 'SITES HORS GESTION');
+        }
+    }
+
+    private function importCategoriesSitesFromWorkbook(Spreadsheet $workbook): void
+    {
+        $categoriesUniques = [];
+        $sheets = [
+            $this->findSheetByKeywords($workbook, ['PDIS EN COMMUNAUT', 'HOTES'], ['DEC23']),
+            $this->findSheetByKeywords($workbook, ['SITES SOUS GESTION']),
+            $this->findSheetByKeywords($workbook, ['SITES HORS GESTION']),
+        ];
+
+        foreach ($sheets as $sheet) {
+            if (! $sheet) {
+                continue;
+            }
+            [$header, $rows] = $this->readWorksheetRows($sheet);
+            $columnMap = $this->buildColumnMap($header);
+            foreach ($rows as $row) {
+                $categorie = trim((string) ($this->getValue($row, $columnMap, 'TYPE') ?? ''));
+                if ($categorie !== '' && $categorie !== 'No Data' && $categorie !== 'TYPE') {
+                    $categoriesUniques[$categorie] = true;
+                }
+            }
+        }
+
+        foreach (array_keys($categoriesUniques) as $categorie) {
+            CategorieSite::firstOrCreate(
+                ['name' => $categorie],
+                ['code' => strtoupper(str_replace(' ', '_', substr($categorie, 0, 20)))]
+            );
+        }
+
+        echo "  → " . count($categoriesUniques) . " catégories de sites créées/trouvées.\n";
+    }
+
+    private function importTypesSitesFromWorkbook(Spreadsheet $workbook): void
+    {
+        $typesUniques = ['Village' => true];
+        $sheets = [
+            $this->findSheetByKeywords($workbook, ['SITES SOUS GESTION']),
+            $this->findSheetByKeywords($workbook, ['SITES HORS GESTION']),
+        ];
+
+        foreach ($sheets as $sheet) {
+            if (! $sheet) {
+                continue;
+            }
+            [$header, $rows] = $this->readWorksheetRows($sheet);
+            $columnMap = $this->buildColumnMap($header);
+            foreach ($rows as $row) {
+                $type = trim((string) (
+                    $this->getValue($row, $columnMap, 'TYPE DE SITE*')
+                    ?? $this->getValue($row, $columnMap, 'TYPE DE SITE')
+                    ?? $this->getValue($row, $columnMap, 'TYPE DE SITE ')
+                    ?? ''
+                ));
+                if ($type !== '' && $type !== 'No Data') {
+                    $typesUniques[$type] = true;
+                }
+            }
+        }
+
+        foreach (array_keys($typesUniques) as $type) {
+            TypeSite::firstOrCreate(
+                ['name' => $type],
+                ['code' => strtoupper(str_replace(' ', '_', $type))]
+            );
+        }
+
+        echo "  → " . count($typesUniques) . " types de sites créés/trouvés.\n";
+    }
+
+    private function importGestionnairesFromWorkbook(Spreadsheet $workbook): void
+    {
+        $gestionnairesUniques = [];
+        $sheet = $this->findSheetByKeywords($workbook, ['SITES SOUS GESTION']);
+        if ($sheet) {
+            [$header, $rows] = $this->readWorksheetRows($sheet);
+            $columnMap = $this->buildColumnMap($header);
+            foreach ($rows as $row) {
+                $gestionnaire = trim((string) ($this->getValue($row, $columnMap, 'GESTIONNAIRE*') ?? ''));
+                if ($gestionnaire !== '' && $gestionnaire !== 'No Data') {
+                    $gestionnairesUniques[$gestionnaire] = true;
+                }
+            }
+        }
+
+        foreach (array_keys($gestionnairesUniques) as $gestionnaire) {
+            Gestionnaire::firstOrCreate(
+                ['name' => $gestionnaire],
+                ['code' => strtoupper(substr($gestionnaire, 0, 10))]
+            );
+        }
+
+        echo "  → " . count($gestionnairesUniques) . " gestionnaires créés/trouvés.\n";
+    }
+
+    private function importCoordinateursFromWorkbook(Spreadsheet $workbook): void
+    {
+        $coordinateursUniques = [];
+        $sheet = $this->findSheetByKeywords($workbook, ['SITES SOUS GESTION']);
+        if ($sheet) {
+            [$header, $rows] = $this->readWorksheetRows($sheet);
+            $columnMap = $this->buildColumnMap($header);
+            foreach ($rows as $row) {
+                $coordinateur = trim((string) ($this->getValue($row, $columnMap, 'COORDINATEUR*') ?? ''));
+                if ($coordinateur !== '' && $coordinateur !== 'No Data') {
+                    $coordinateursUniques[$coordinateur] = true;
+                }
+            }
+        }
+
+        foreach (array_keys($coordinateursUniques) as $coordinateur) {
+            Coordinateur::firstOrCreate(
+                ['name' => $coordinateur],
+                ['code' => strtoupper(substr($coordinateur, 0, 10))]
+            );
+        }
+
+        echo "  → " . count($coordinateursUniques) . " coordinateurs créés/trouvés.\n";
+    }
+
+    private function importSitesFromWorksheet(Worksheet $sheet, string $typeFichier): void
+    {
+        [$header, $rows] = $this->readWorksheetRows($sheet);
+        $columnMap = $this->buildColumnMap($header);
+        $count = 0;
+        $errors = 0;
+
+        foreach ($rows as $row) {
+            try {
+                $siteData = $this->extractSiteData($row, $columnMap, $typeFichier);
+                if (! empty($siteData['nom'])) {
+                    $this->createSiteWithPopulation($siteData);
+                    $count++;
+                }
+            } catch (\Exception $e) {
+                $errors++;
+            }
+        }
+
+        echo "  → $typeFichier : $count sites importés ($errors erreurs)\n";
+    }
+
+    private function readWorksheetRows(Worksheet $sheet): array
+    {
+        $highestColumn = $sheet->getHighestDataColumn();
+        $highestRow = $sheet->getHighestDataRow();
+        $header = $sheet->rangeToArray("A1:{$highestColumn}1", null, false, false)[0];
+        $rows = [];
+
+        for ($rowIndex = 2; $rowIndex <= $highestRow; $rowIndex++) {
+            $row = $sheet->rangeToArray("A{$rowIndex}:{$highestColumn}{$rowIndex}", null, false, false)[0];
+            $rows[] = $row;
+        }
+
+        return [$header, $rows];
+    }
+
+    private function buildColumnMap(array $header): array
+    {
+        $map = [];
+        foreach ($header as $index => $column) {
+            $map[(string) $column] = $index;
+        }
+        return $map;
+    }
+
+    private function normalizeText(string $value): string
+    {
+        $normalized = strtoupper(trim($value));
+        $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $normalized);
+        return $ascii !== false ? $ascii : $normalized;
+    }
+
+    private function findSheetByKeywords(Spreadsheet $workbook, array $keywords, array $excludeKeywords = []): ?Worksheet
+    {
+        foreach ($workbook->getWorksheetIterator() as $sheet) {
+            $title = $this->normalizeText($sheet->getTitle());
+            $containsAll = true;
+            foreach ($keywords as $keyword) {
+                if (! str_contains($title, $this->normalizeText($keyword))) {
+                    $containsAll = false;
+                    break;
+                }
+            }
+            if (! $containsAll) {
+                continue;
+            }
+
+            $isExcluded = false;
+            foreach ($excludeKeywords as $keyword) {
+                if (str_contains($title, $this->normalizeText($keyword))) {
+                    $isExcluded = true;
+                    break;
+                }
+            }
+
+            if (! $isExcluded) {
+                return $sheet;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -259,7 +522,7 @@ class SitesSeeder extends Seeder
                 $siteData = $this->extractSiteData($row, $columnMap, $typeFichier);
                 
                 if (!empty($siteData['nom'])) {
-                    Site::create($siteData);
+                    $this->createSiteWithPopulation($siteData);
                     $count++;
                 }
             } catch (\Exception $e) {
@@ -294,7 +557,9 @@ class SitesSeeder extends Seeder
         // Déterminer le nom du site selon le fichier
         $nom = '';
         if ($typeFichier === 'PDIs EN COMMUNAUTÉS HÔTES') {
-            $nom = $this->getValue($row, $columnMap, 'VILLAGE');
+            $nom = $this->getValue($row, $columnMap, 'VILLAGE')
+                ?? $this->getValue($row, $columnMap, 'NOM DU SITE')
+                ?? $this->getValue($row, $columnMap, 'NOM DU SITE*');
         } else {
             $nom = $this->getValue($row, $columnMap, 'NOM DU SITE') 
                    ?? $this->getValue($row, $columnMap, 'NOM DU SITE*');
@@ -416,6 +681,46 @@ class SitesSeeder extends Seeder
         return null;
     }
 
+    private function createSiteWithPopulation(array $siteData): Site
+    {
+        $populationFields = [
+            'menages', 'individus',
+            'f_0_5', 'f_6_17', 'f_18_59', 'f_60_plus',
+            'h_0_5', 'h_6_17', 'h_18_59', 'h_60_plus',
+        ];
+        $site = Site::create($this->filterSiteDataForCurrentSchema(
+            collect($siteData)->except($populationFields)->all()
+        ));
+
+        if (! Schema::hasTable('site_mouvements_population')) {
+            return $site;
+        }
+
+        $population = collect($populationFields)
+            ->mapWithKeys(fn (string $field) => [$field => abs((int) ($siteData[$field] ?? 0))])
+            ->all();
+
+        if (collect($population)->doesntContain(fn (int $value) => $value !== 0)) {
+            return $site;
+        }
+
+        DB::table('site_mouvements_population')->insert([
+            'site_id' => $site->id,
+            'date_mouvement' => $siteData['date_mise_a_jour'] ?? now()->toDateString(),
+            'type_mouvement' => 'recensement',
+            'periode' => date('Y-m', strtotime($siteData['date_mise_a_jour'] ?? now()->toDateString())),
+            ...$population,
+            'source' => $siteData['source'] ?? 'sites_seeder',
+            'round' => $siteData['round'] ?? null,
+            'statut' => 'valide',
+            'validated_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return $site;
+    }
+
     /**
      * Parse un nombre entier depuis une chaîne
      */
@@ -442,5 +747,18 @@ class SitesSeeder extends Seeder
         // Retirer les espaces
         $cleaned = trim(str_replace(' ', '', $value));
         return is_numeric($cleaned) ? (float)$cleaned : null;
+    }
+
+    private function filterSiteDataForCurrentSchema(array $siteData): array
+    {
+        if (empty($this->siteTableColumns)) {
+            $this->siteTableColumns = Schema::getColumnListing('sites');
+        }
+
+        return array_filter(
+            $siteData,
+            fn ($key) => in_array($key, $this->siteTableColumns, true),
+            ARRAY_FILTER_USE_KEY
+        );
     }
 }

@@ -18,13 +18,21 @@
 
         <!-- Barre de recherche -->
         <div class="bg-white dark:bg-gray-800 shadow rounded p-4 mb-4">
-            <form method="GET" action="{{ route('organisation.sites.index') }}" class="flex gap-4">
+            <form method="GET" action="{{ route('organisation.sites.index') }}" class="flex flex-col md:flex-row gap-4 md:items-end">
                 <div class="flex-1">
                     <input type="text" 
                            name="search" 
                            value="{{ request('search') }}"
                            placeholder="Rechercher un site..."
                            class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-primary-500 focus:border-primary-500">
+                </div>
+                <div class="md:w-64">
+                    <label for="gps_status" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">GPS</label>
+                    <select name="gps_status" id="gps_status" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-primary-500 focus:border-primary-500">
+                        <option value="" {{ request('gps_status') === null || request('gps_status') === '' ? 'selected' : '' }}>Tous les sites</option>
+                        <option value="present" {{ request('gps_status') === 'present' ? 'selected' : '' }}>Sites avec GPS</option>
+                        <option value="missing" {{ request('gps_status') === 'missing' ? 'selected' : '' }}>Sites sans GPS</option>
+                    </select>
                 </div>
                 <button type="submit" 
                         class="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors">
@@ -36,6 +44,17 @@
         <!-- Liste des sites -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             @forelse($sites as $site)
+            @php
+                $hasGps = is_numeric($site->latitude) && is_numeric($site->longitude)
+                    && (float) $site->latitude !== 0.0
+                    && (float) $site->longitude !== 0.0;
+                $gpsBadgeClass = $hasGps
+                    ? 'bg-emerald-500 text-white'
+                    : 'bg-red-500 text-white';
+                $gpsBadgeLabel = $hasGps
+                    ? 'GPS'
+                    : 'GPS manquant / 0';
+            @endphp
             <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
                  onclick="window.location.href='{{ route('organisation.sites.edit', $site) }}'">
                 <!-- Photo du site -->
@@ -54,16 +73,14 @@
                     @endif
                     
                     <!-- Badge de localisation GPS -->
-                    @if($site->latitude && $site->longitude)
                     <div class="absolute top-2 right-2">
-                        <span class="px-2 py-1 bg-emerald-500 text-white text-xs rounded-full flex items-center">
+                        <span class="px-2 py-1 {{ $gpsBadgeClass }} text-xs rounded-full flex items-center">
                             <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                 <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"></path>
                             </svg>
-                            GPS
+                            {{ $gpsBadgeLabel }}
                         </span>
                     </div>
-                    @endif
                 </div>
 
                 <!-- Informations du site -->

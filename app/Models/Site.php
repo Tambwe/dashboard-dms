@@ -2,12 +2,19 @@
 
 namespace App\Models;
 
+use App\Services\SitePopulationService;
+
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Site extends Model
 {
     use HasFactory;
+
+    protected $hidden = [
+        '__population_snapshot',
+        'mouvementsPopulationValides',
+    ];
 
     protected $fillable = [
         'nom',
@@ -30,19 +37,16 @@ class Site extends Model
         'latitude',
         'photos',
         'geojson_data',
-        'menages',
-        'individus',
-        'f_0_5',
-        'f_6_17',
-        'f_18_59',
-        'f_60_plus',
-        'h_0_5',
-        'h_6_17',
-        'h_18_59',
-        'h_60_plus',
+        'geometry_type',
+        'collection_accuracy_m',
+        'geometry_collected_at',
         'source',
         'round',
         'type_gestion',
+        'date_fermeture',
+        'raison_fermeture',
+        'commentaire_fermeture',
+        'document_fermeture',
         'date_mise_a_jour',
         'type_fichier',
     ];
@@ -52,18 +56,30 @@ class Site extends Model
         'latitude' => 'decimal:8',
         'photos' => 'array',
         'geojson_data' => 'array',
-        'menages' => 'integer',
-        'individus' => 'integer',
-        'f_0_5' => 'integer',
-        'f_6_17' => 'integer',
-        'f_18_59' => 'integer',
-        'f_60_plus' => 'integer',
-        'h_0_5' => 'integer',
-        'h_6_17' => 'integer',
-        'h_18_59' => 'integer',
-        'h_60_plus' => 'integer',
+        'collection_accuracy_m' => 'decimal:2',
+        'geometry_collected_at' => 'datetime',
+        'date_fermeture' => 'date',
         'date_mise_a_jour' => 'date',
     ];
+
+    /**
+     * Scope : sites actuellement ouverts.
+     */
+    public function scopeOuverts($query)
+    {
+        return $query->whereNull('date_fermeture');
+    }
+
+    /**
+     * Scope : sites actifs à une date donnée.
+     */
+    public function scopeActifsALaDate($query, $date)
+    {
+        return $query->where(function ($q) use ($date) {
+            $q->whereNull('date_fermeture')
+                ->orWhere('date_fermeture', '>', $date);
+        });
+    }
 
     /**
      * Relation : Un site peut être géré par une organisation
@@ -161,6 +177,14 @@ class Site extends Model
         return $this->hasMany(SiteMouvementPopulation::class, 'site_id');
     }
 
+    public function mouvementsPopulationValides()
+    {
+        return $this->mouvementsPopulation()
+            ->where('statut', 'valide')
+            ->orderBy('date_mouvement')
+            ->orderBy('id');
+    }
+
     /**
      * Relation : Un site a plusieurs profils de services
      */
@@ -178,11 +202,19 @@ class Site extends Model
     }
 
     /**
+     * Relation : Historique des géographies collectées pour ce site.
+     */
+    public function geographies()
+    {
+        return $this->hasMany(SiteGeography::class, 'site_id')->orderByDesc('collected_at')->orderByDesc('id');
+    }
+
+    /**
      * Calcule le total des femmes
      */
     public function getTotalFemmesAttribute()
     {
-        return ($this->f_0_5 ?? 0) + ($this->f_6_17 ?? 0) + ($this->f_18_59 ?? 0) + ($this->f_60_plus ?? 0);
+        return $this->populationValue('total_femmes');
     }
 
     /**
@@ -190,7 +222,7 @@ class Site extends Model
      */
     public function getTotalHommesAttribute()
     {
-        return ($this->h_0_5 ?? 0) + ($this->h_6_17 ?? 0) + ($this->h_18_59 ?? 0) + ($this->h_60_plus ?? 0);
+        return $this->populationValue('total_hommes');
     }
 
     /**
@@ -198,7 +230,7 @@ class Site extends Model
      */
     public function getTotalEnfantsAttribute()
     {
-        return ($this->f_0_5 ?? 0) + ($this->f_6_17 ?? 0) + ($this->h_0_5 ?? 0) + ($this->h_6_17 ?? 0);
+        return $this->populationValue('total_enfants');
     }
 
     /**
@@ -206,7 +238,7 @@ class Site extends Model
      */
     public function getTotalAdultesAttribute()
     {
-        return ($this->f_18_59 ?? 0) + ($this->h_18_59 ?? 0);
+        return $this->populationValue('total_adultes');
     }
 
     /**
@@ -214,6 +246,71 @@ class Site extends Model
      */
     public function getTotalPersonnesAgeesAttribute()
     {
-        return ($this->f_60_plus ?? 0) + ($this->h_60_plus ?? 0);
+        return $this->populationValue('total_personnes_agees');
+    }
+
+    public function getMenagesAttribute(): int
+    {
+        return $this->populationValue('menages');
+    }
+
+    public function getIndividusAttribute(): int
+    {
+        return $this->populationValue('individus');
+    }
+
+    public function getF05Attribute(): int
+    {
+        return $this->populationValue('f_0_5');
+    }
+
+    public function getF617Attribute(): int
+    {
+        return $this->populationValue('f_6_17');
+    }
+
+    public function getF1859Attribute(): int
+    {
+        return $this->populationValue('f_18_59');
+    }
+
+    public function getF60PlusAttribute(): int
+    {
+        return $this->populationValue('f_60_plus');
+    }
+
+    public function getH05Attribute(): int
+    {
+        return $this->populationValue('h_0_5');
+    }
+
+    public function getH617Attribute(): int
+    {
+        return $this->populationValue('h_6_17');
+    }
+
+    public function getH1859Attribute(): int
+    {
+        return $this->populationValue('h_18_59');
+    }
+
+    public function getH60PlusAttribute(): int
+    {
+        return $this->populationValue('h_60_plus');
+    }
+
+    private function populationValue(string $field): int
+    {
+        if (! array_key_exists('__population_snapshot', $this->relations)) {
+            $movements = $this->relationLoaded('mouvementsPopulationValides')
+                ? $this->getRelation('mouvementsPopulationValides')
+                : $this->mouvementsPopulationValides()->get();
+            $this->setRelation(
+                '__population_snapshot',
+                collect(app(SitePopulationService::class)->reduceMovements($movements))
+            );
+        }
+
+        return (int) $this->getRelation('__population_snapshot')->get($field, 0);
     }
 }

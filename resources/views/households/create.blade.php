@@ -30,7 +30,7 @@
                             <option value="">Sélectionnez un site</option>
                             @foreach($sites as $site)
                                 <option value="{{ $site->id }}" {{ old('site_id') == $site->id ? 'selected' : '' }}>
-                                    {{ $site->nom }}
+                                    {{ $site->nom }}{{ $site->date_fermeture ? ' [Site fermé]' : '' }}
                                 </option>
                             @endforeach
                         </select>

@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=inter:400,500,600,700&display=swap" rel="stylesheet" />
     <x-vite-manifest-loader :assets="['resources/css/app.css', 'resources/js/app.js']" />
+    <x-sweetalert-flash />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin=""/>
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin=""/>
@@ -122,6 +123,17 @@
         .dark .visible-sites-table td{color:#e2e8f0;border-color:#334155}
         .dark .visible-sites-count{background:#1d4ed8;color:#dbeafe}
 
+        .map-legend-control{background:rgba(255,255,255,0.96);border:1px solid #dbe3ef;border-radius:10px;box-shadow:0 8px 20px rgba(15,23,42,0.12);padding:8px 10px;min-width:170px;backdrop-filter:blur(6px)}
+        .map-legend-title{font-size:0.66rem;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;color:#475569;margin-bottom:6px}
+        .map-legend-item{display:flex;align-items:center;gap:6px;font-size:0.67rem;color:#334155;line-height:1.3;margin-bottom:4px}
+        .map-legend-item:last-child{margin-bottom:0}
+        .map-legend-swatch{width:16px;height:3px;border-radius:2px;flex-shrink:0}
+        .map-legend-dot{width:9px;height:9px;border-radius:999px;display:inline-block;flex-shrink:0}
+        .map-legend-cluster{width:17px;height:17px;border-radius:999px;background:#2563eb;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;flex-shrink:0}
+        .dark .map-legend-control{background:rgba(15,23,42,0.92);border-color:#334155}
+        .dark .map-legend-title{color:#cbd5e1}
+        .dark .map-legend-item{color:#e2e8f0}
+
         /* ── Popups ───────────────────────────────────────────────── */
         .leaflet-popup-content-wrapper{border-radius:10px!important;padding:0!important;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.15)!important}
         .leaflet-popup-content{margin:0!important}
@@ -153,13 +165,13 @@
         .print-card-line strong{color:#0f172a}
         #print-sites-list{display:none}
 
-        @page { size: A4 landscape; margin: 1cm; }
+        @page { size: A4 landscape; margin: 0; }
         @media print {
-            html,body{height:auto!important;background:#fff!important}
+            html,body{height:100%!important;width:100%!important;margin:0!important;padding:0!important;background:#fff!important}
             #carto-navbar,#filter-panel,#btn-toggle{display:none!important}
-            #carto-layout{position:static!important;top:0!important;left:0!important;right:0!important;bottom:auto!important;height:auto!important;display:block!important}
-            #map-container{position:relative!important;height:100vh!important;width:100%!important}
-            #map{position:static!important;height:100vh!important;width:100%!important}
+            #carto-layout{position:fixed!important;inset:0!important;height:100%!important;width:100%!important;display:block!important;overflow:hidden!important}
+            #map-container{position:fixed!important;inset:0!important;height:100%!important;width:100%!important;margin:0!important;padding:0!important}
+            #map{position:absolute!important;inset:0!important;height:100%!important;width:100%!important}
             .leaflet-control-container,.leaflet-control-attribution{display:none!important}
             .visible-sites-panel{display:none!important}
             .print-details{display:block!important;position:absolute!important;top:14px!important;left:14px!important;z-index:9999!important;max-width:360px!important;background:rgba(255,255,255,0.94)!important;border:1px solid #cbd5e1!important;border-radius:10px!important;box-shadow:0 8px 24px rgba(15,23,42,0.12)!important;padding:12px 14px!important}
@@ -186,6 +198,16 @@
         <a href="{{ url('/profil-site') }}"  style="font-size:0.8rem;color:#64748b;text-decoration:none;font-weight:500" class="hidden md:block">Profil des sites</a>
         <a href="{{ url('/cartographie') }}" style="font-size:0.8rem;color:#2563eb;text-decoration:none;font-weight:600;border-bottom:2px solid #2563eb;padding-bottom:1px" class="hidden md:block">Cartographie</a>
         <a href="{{ url('/cartographie-mapbox') }}" style="font-size:0.8rem;color:#64748b;text-decoration:none;font-weight:500" class="hidden md:block">Cartographie Mapbox</a>
+        <select id="print-format" title="Format impression" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:0.72rem;font-weight:600">
+            <option value="A1 landscape">A1 paysage</option>
+            <option value="A1 portrait">A1 portrait</option>
+            <option value="A2 landscape">A2 paysage</option>
+            <option value="A2 portrait">A2 portrait</option>
+            <option value="A3 landscape">A3 paysage</option>
+            <option value="A3 portrait">A3 portrait</option>
+            <option value="A4 landscape" selected>A4 paysage</option>
+            <option value="A4 portrait">A4 portrait</option>
+        </select>
         <button id="btn-print" type="button" style="padding:6px 10px;background:#2563eb;border:none;border-radius:8px;cursor:pointer;color:#fff;display:flex;align-items:center;font-size:0.75rem;font-weight:600" title="Imprimer la carte">🖨️ Imprimer</button>
         <button onclick="toggleDarkMode()" style="padding:6px;background:#f1f5f9;border:none;border-radius:8px;cursor:pointer;color:#475569;display:flex;align-items:center" title="Mode sombre">
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
@@ -347,27 +369,39 @@ document.addEventListener('DOMContentLoaded', function () {
     var markerLayer = (typeof L.markerClusterGroup === 'function')
         ? L.markerClusterGroup({ maxClusterRadius: 50, showCoverageOnHover: false })
         : L.layerGroup();
-    var polygonLayer = L.layerGroup();
+    var thematicLayerPalette = ['#7c3aed', '#2563eb', '#16a34a', '#d97706', '#dc2626', '#0891b2'];
+    var deferredThematicLayers = [];
+    var thematicOverlayMaps = {};
+    var thematicOverlayControl = null;
     var adminConfigs = {
         admin0: { file: '/geojson/cod_admin0.geojson', color: '#1e293b', weight: 2.4, fillOpacity: 0.01, label: 'Pays', field: 'adm0_name' },
         admin1: { file: '/geojson/cod_admin1.geojson', color: '#dc2626', weight: 1.8, fillOpacity: 0.04, label: 'Province', field: 'adm1_name' },
         admin2: { file: '/geojson/cod_admin2.geojson', color: '#d97706', weight: 1.1, fillOpacity: 0.03, label: 'Territoire', field: 'adm2_name' },
-        admin3: { file: '/geojson/cod_admin3.geojson', color: '#7c3aed', weight: 0.8, fillOpacity: 0.02, label: 'Zone de sante', field: 'adm3_name' }
+        admin3: { file: '/geojson/cod_admin3.geojson', color: '#7c3aed', weight: 0.8, fillOpacity: 0.02, label: 'Zone de sante', field: 'adm3_name' },
+        rhoAcf: { file: '/geojson/BD_Rho_ACF_combined_EPSG4326.geojson', color: '#0f766e', weight: 1.7, fillOpacity: 0.08, label: 'RHO ACF', field: 'name' }
     };
     var adminLayers = {
         admin0: L.layerGroup(),
         admin1: L.layerGroup(),
         admin2: L.layerGroup(),
-        admin3: L.layerGroup()
+        admin3: L.layerGroup(),
+        rhoAcf: L.layerGroup()
     };
     var adminLoaded = {
         admin0: false,
         admin1: false,
         admin2: false,
-        admin3: false
+        admin3: false,
+        rhoAcf: false
+    };
+    var adminLoadPromises = {
+        admin0: null,
+        admin1: null,
+        admin2: null,
+        admin3: null,
+        rhoAcf: null
     };
     var territoryLabelLayers = [];
-    map.addLayer(polygonLayer);
     map.addLayer(markerLayer);
     map.addLayer(adminLayers.admin1);
 
@@ -375,8 +409,24 @@ document.addEventListener('DOMContentLoaded', function () {
         '&#x1F534; Provinces': adminLayers.admin1,
         '&#x1F7E0; Territoires': adminLayers.admin2,
         '&#x1F7E3; Zones de sante': adminLayers.admin3,
+        '&#x1F7E2; RHO ACF': adminLayers.rhoAcf,
         '&#x26AB; Pays': adminLayers.admin0
     }, { position: 'topright', collapsed: true }).addTo(map);
+
+    var legendControl = L.control({ position: 'bottomleft' });
+    legendControl.onAdd = function() {
+        var div = L.DomUtil.create('div', 'map-legend-control');
+        div.innerHTML = ''
+            + '<div class="map-legend-title">Legende</div>'
+            + '<div class="map-legend-item"><span class="map-legend-dot" style="background:#3b82f6"></span>Site (marqueur)</div>'
+            + '<div class="map-legend-item"><span class="map-legend-cluster">N</span>Cluster de sites</div>'
+            + '<div class="map-legend-item"><span class="map-legend-swatch" style="background:#dc2626"></span>Limite province</div>'
+            + '<div class="map-legend-item"><span class="map-legend-swatch" style="background:#d97706"></span>Limite territoire</div>'
+            + '<div class="map-legend-item"><span class="map-legend-swatch" style="background:#7c3aed"></span>Zone de sante</div>'
+            + '<div class="map-legend-item"><span class="map-legend-swatch" style="background:#0f766e"></span>Couche RHO ACF</div>';
+        return div;
+    };
+    legendControl.addTo(map);
     // ────────────────────────────────────────────────────────────────
 
     function getAdminStyle(key) {
@@ -416,14 +466,32 @@ document.addEventListener('DOMContentLoaded', function () {
         if (map.hasLayer(adminLayers.admin1)) layers.push('Provinces');
         if (map.hasLayer(adminLayers.admin2)) layers.push('Territoires');
         if (map.hasLayer(adminLayers.admin3)) layers.push('Zones de sante');
+        if (map.hasLayer(adminLayers.rhoAcf)) layers.push('RHO ACF');
         if (map.hasLayer(adminLayers.admin0)) layers.push('Pays');
         return layers.length ? layers.join(', ') : 'Aucune';
+    }
+
+    function getVisibleThematicLayers() {
+        var activeLayers = deferredThematicLayers
+            .filter(function(item) { return map.hasLayer(item.layerGroup); })
+            .map(function(item) { return item.controlLabel; });
+
+        if (!activeLayers.length) {
+            return 'Aucune';
+        }
+
+        if (activeLayers.length > 8) {
+            return activeLayers.slice(0, 8).join(', ') + ' +' + (activeLayers.length - 8);
+        }
+
+        return activeLayers.join(', ');
     }
 
     function updatePrintDetails() {
         var printBox = document.getElementById('print-details');
         if (!printBox) return;
 
+        var selectedSite = getSelectedPrintSite();
         var lines = [];
         lines.push('<div class="print-card-title">Cartographie des sites - Leaflet</div>');
         lines.push('<div class="print-card-meta">Imprime le ' + new Date().toLocaleString('fr-FR') + '</div>');
@@ -435,13 +503,25 @@ document.addEventListener('DOMContentLoaded', function () {
         lines.push('<div class="print-card-line"><strong>Categorie :</strong> ' + esc(getSelectedLabel('filter-categorie', 'Toutes')) + '</div>');
         lines.push('<div class="print-card-line"><strong>Fond :</strong> ' + esc(getCurrentBaseLayerName()) + '</div>');
         lines.push('<div class="print-card-line"><strong>Limites visibles :</strong> ' + esc(getVisibleAdminLayers()) + '</div>');
+        lines.push('<div class="print-card-line"><strong>Couches thematiques :</strong> ' + esc(getVisibleThematicLayers()) + '</div>');
+        if (selectedSite) {
+            lines.push('<div class="print-card-line"><strong>Site sélectionné :</strong> ' + esc(selectedSite.nom || '-') + '</div>');
+            lines.push('<div class="print-card-line"><strong>Code :</strong> ' + esc(selectedSite.code_site || selectedSite.code || '-') + '</div>');
+            lines.push('<div class="print-card-line"><strong>Localisation :</strong> ' + esc((selectedSite.province || '-') + ' / ' + (selectedSite.territoire || '-') + ' / ' + (selectedSite.commune || selectedSite.zone_sante || '-')) + '</div>');
+            lines.push('<div class="print-card-line"><strong>Catégorie :</strong> ' + esc((selectedSite.categorie_site && selectedSite.categorie_site.name) || '-') + '</div>');
+            lines.push('<div class="print-card-line"><strong>Coordonnées :</strong> ' + esc((selectedSite.latitude || '-') + ', ' + (selectedSite.longitude || '-')) + '</div>');
+            lines.push('<div class="print-card-line"><strong>Ménages :</strong> ' + esc(selectedSite.menages ? Number(selectedSite.menages).toLocaleString('fr-FR') : '-') + ' <strong style="margin-left:8px;">Individus :</strong> ' + esc(selectedSite.individus ? Number(selectedSite.individus).toLocaleString('fr-FR') : '-') + '</div>');
+            lines.push('<div class="print-card-line"><strong>Couche thématique :</strong> ' + (selectedSite.geojson_data ? 'Oui' : 'Non') + '</div>');
+        } else {
+            lines.push('<div class="print-card-line"><strong>Site sélectionné :</strong> Aucun</div>');
+        }
         printBox.innerHTML = lines.join('');
 
         // Remplir la liste des sites
         var tbody = document.getElementById('print-sites-tbody');
         if (tbody) {
             tbody.innerHTML = '';
-            var sites = currentFilteredSites;
+            var sites = selectedSite ? [selectedSite] : currentFilteredSites;
             if (!sites || !sites.length) {
                 tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#94a3b8">Aucun site</td></tr>';
             } else {
@@ -472,10 +552,12 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function loadAdminLayer(key) {
-        if (adminLoaded[key]) return;
+        if (adminLoaded[key]) return Promise.resolve(adminLayers[key]);
+        if (adminLoadPromises[key]) return adminLoadPromises[key];
+
         adminLoaded[key] = true;
 
-        fetch(adminConfigs[key].file)
+        adminLoadPromises[key] = fetch(adminConfigs[key].file)
             .then(function(r) {
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.json();
@@ -516,17 +598,235 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
                 adminLayers[key].addLayer(geoLayer);
                 if (key === 'admin2') refreshTerritoryLabels();
+                return adminLayers[key];
             })
             .catch(function(err) {
                 console.error('Erreur chargement couche admin', key, err);
                 adminLoaded[key] = false;
+                throw err;
+            })
+            .finally(function() {
+                adminLoadPromises[key] = null;
             });
+
+        return adminLoadPromises[key];
+    }
+
+    function zoomToOverlayBounds(layer, maxZoom, padding) {
+        if (!layer) return;
+
+        var bounds = L.latLngBounds([]);
+        var pushBounds = function(candidate) {
+            if (candidate && candidate.isValid && candidate.isValid()) {
+                bounds.extend(candidate);
+            }
+        };
+
+        if (typeof layer.getBounds === 'function') {
+            pushBounds(layer.getBounds());
+        }
+
+        if (typeof layer.eachLayer === 'function') {
+            layer.eachLayer(function(child) {
+                if (!child) return;
+                if (typeof child.getBounds === 'function') {
+                    pushBounds(child.getBounds());
+                    return;
+                }
+                if (typeof child.getLatLng === 'function') {
+                    bounds.extend(child.getLatLng());
+                }
+            });
+        }
+
+        if (!bounds.isValid || !bounds.isValid()) return;
+
+        if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
+            map.setView(bounds.getCenter(), Math.max(map.getZoom(), Math.min(maxZoom || 12, 13)), { animate: true });
+            return;
+        }
+
+        map.fitBounds(bounds, {
+            padding: padding || [50, 50],
+            maxZoom: maxZoom || 12
+        });
+    }
+
+    function resetThematicControl() {
+        deferredThematicLayers.forEach(function(item) {
+            if (map.hasLayer(item.layerGroup)) {
+                map.removeLayer(item.layerGroup);
+            }
+            item.layerGroup.clearLayers();
+        });
+
+        deferredThematicLayers = [];
+        thematicOverlayMaps = {};
+
+        if (thematicOverlayControl) {
+            map.removeControl(thematicOverlayControl);
+            thematicOverlayControl = null;
+        }
+    }
+
+    function normalizeGeojsonLayers(site) {
+        var source = site && site.geojson_data;
+        if (!source || typeof source !== 'object') {
+            return [];
+        }
+
+        if (Array.isArray(source.layers)) {
+            return source.layers
+                .map(function(layerItem, index) {
+                    if (!layerItem || typeof layerItem !== 'object') return null;
+                    var layerGeojson = layerItem.geojson || layerItem.data || null;
+                    if (!layerGeojson || typeof layerGeojson !== 'object' || !layerGeojson.type) return null;
+
+                    var label = (layerItem.name || layerItem.label || '').toString().trim();
+                    if (!label) {
+                        label = 'Couche ' + (index + 1);
+                    }
+
+                    return {
+                        index: index,
+                        name: label,
+                        geojson: layerGeojson
+                    };
+                })
+                .filter(function(item) { return !!item; });
+        }
+
+        if (source.type) {
+            return [{ index: 0, name: 'GeoJSON', geojson: source }];
+        }
+
+        return [];
+    }
+
+    function buildThematicLayer(site, layerMeta, styleIndex, popupHtml) {
+        var color = thematicLayerPalette[styleIndex % thematicLayerPalette.length];
+        return L.geoJSON(layerMeta.geojson, {
+            style: function() {
+                return {
+                    color: color,
+                    weight: 2.5,
+                    opacity: 0.85,
+                    fillColor: color,
+                    fillOpacity: 0.2
+                };
+            },
+            pointToLayer: function(feature, latlng) {
+                return L.circleMarker(latlng, {
+                    radius: 7,
+                    fillColor: color,
+                    color: '#1f2937',
+                    weight: 1.5,
+                    opacity: 1,
+                    fillOpacity: 0.75
+                });
+            },
+            onEachFeature: function(feature, layer) {
+                layer.bindPopup(popupHtml + buildThematicPopupDetails(site, layerMeta, feature), { maxWidth: 320 });
+                layer.on('mouseover', function(e) {
+                    if (e && e.target && e.target.setStyle) {
+                        e.target.setStyle({ fillOpacity: 0.34, weight: 3.2 });
+                    }
+                });
+                layer.on('mouseout', function(e) {
+                    if (e && e.target && e.target.setStyle) {
+                        e.target.setStyle({ fillOpacity: 0.2, weight: 2.5 });
+                    }
+                });
+            }
+        });
+    }
+
+    function buildThematicPopupDetails(site, layerMeta, feature) {
+        var properties = feature && feature.properties ? feature.properties : {};
+        var geometryType = feature && feature.geometry && feature.geometry.type ? feature.geometry.type : 'Inconnu';
+        var featureLabel = properties.name || properties.nom || properties.label || properties.code || '-';
+        var siteCode = site && (site.code_site || site.code) ? (site.code_site || site.code) : '-';
+
+        var skipKeys = {
+            name: true,
+            nom: true,
+            label: true,
+            code: true,
+            code_site: true,
+            id: true
+        };
+
+        var selectedAttributes = Object.keys(properties)
+            .filter(function(key) {
+                if (!Object.prototype.hasOwnProperty.call(properties, key)) return false;
+                if (skipKeys[key]) return false;
+                var value = properties[key];
+                return value !== null && value !== undefined && String(value).trim() !== '';
+            })
+            .slice(0, 6)
+            .map(function(key) {
+                return '<div class="popup-geo" style="margin-bottom:2px"><strong>' + esc(key) + ':</strong> ' + esc(properties[key]) + '</div>';
+            });
+
+        return ''
+            + '<div class="popup-geo" style="margin-top:6px"><strong>Couche:</strong> ' + esc(layerMeta && layerMeta.name ? layerMeta.name : '-') + '</div>'
+            + '<div class="popup-geo"><strong>Entité:</strong> ' + esc(featureLabel) + '</div>'
+            + '<div class="popup-geo"><strong>Type:</strong> ' + esc(geometryType) + '</div>'
+            + '<div class="popup-geo"><strong>Code site:</strong> ' + esc(siteCode) + '</div>'
+            + (selectedAttributes.length
+                ? '<div class="popup-geo" style="margin-top:4px"><strong>Attributs:</strong></div>' + selectedAttributes.join('')
+                : '');
+    }
+
+    function ensureThematicLayerRendered(deferredLayer) {
+        if (!deferredLayer || deferredLayer.loaded || deferredLayer.hasError) {
+            return Promise.resolve();
+        }
+
+        if (deferredLayer.pendingPromise) {
+            return deferredLayer.pendingPromise;
+        }
+
+        deferredLayer.pendingPromise = Promise.resolve().then(function() {
+            var layer = buildThematicLayer(
+                deferredLayer.site,
+                deferredLayer.layerMeta,
+                deferredLayer.styleIndex,
+                deferredLayer.popupHtml
+            );
+
+            deferredLayer.layerGroup.clearLayers();
+            deferredLayer.layerGroup.addLayer(layer);
+            deferredLayer.loaded = true;
+        }).catch(function(err) {
+            deferredLayer.hasError = true;
+            console.error('Erreur de rendu couche thematique', err);
+        }).finally(function() {
+            deferredLayer.pendingPromise = null;
+        });
+
+        return deferredLayer.pendingPromise;
     }
 
     map.on('overlayadd', function(evt) {
         Object.keys(adminLayers).forEach(function(key) {
-            if (evt.layer === adminLayers[key]) loadAdminLayer(key);
+            if (evt.layer === adminLayers[key]) {
+                loadAdminLayer(key).then(function() {
+                    var maxZoom = key === 'admin0' ? 7 : key === 'admin1' ? 8 : key === 'admin2' ? 10 : 12;
+                    zoomToOverlayBounds(adminLayers[key], maxZoom, [55, 55]);
+                }).catch(function() {});
+            }
         });
+
+        var deferredLayer = deferredThematicLayers.find(function(item) {
+            return item.layerGroup === evt.layer;
+        });
+        if (deferredLayer) {
+            ensureThematicLayerRendered(deferredLayer).then(function() {
+                zoomToOverlayBounds(deferredLayer.layerGroup, 14, [60, 60]);
+            });
+        }
+
         refreshTerritoryLabels();
     });
 
@@ -537,6 +837,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var allSites  = [];
     var activeCard = null;
+    var activeSite = null;
+    var printFormatSelect = document.getElementById('print-format');
 
     var allTerritoires = @json($territoires->map(fn($t) => ['id' => $t->id, 'name' => $t->name, 'province_id' => $t->province_id]));
 
@@ -573,10 +875,13 @@ document.addEventListener('DOMContentLoaded', function () {
         var qs = Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';
         listWrap.innerHTML = '<div class="list-msg">Chargement&#8230;</div>';
         activeCard = null;
+        activeSite = null;
         fetch('/api/geographic/sites-coordinates' + qs)
             .then(function(r){ return r.json(); })
             .then(function(data){
-                allSites = Array.isArray(data) ? data : [];
+                allSites = Array.isArray(data)
+                    ? data
+                    : (Array.isArray(data && data.sites) ? data.sites : []);
                 renderMarkers();
             })
             .catch(function(){
@@ -586,6 +891,70 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
     function fmt(n){ return n ? Number(n).toLocaleString('fr-FR') : null; }
+
+    function getSelectedPrintSite() {
+        if (activeSite) return activeSite;
+        if (currentFilteredSites.length === 1) return currentFilteredSites[0];
+        return null;
+    }
+
+    var printRestoreState = null;
+
+    function applyPrintPageSize() {
+        var selected = printFormatSelect && printFormatSelect.value ? printFormatSelect.value : 'A4 landscape';
+        var style = document.getElementById('print-page-style');
+        if (!style) {
+            style = document.createElement('style');
+            style.id = 'print-page-style';
+            document.head.appendChild(style);
+        }
+        style.textContent = '@page { size: ' + selected + '; margin: 0; }';
+    }
+
+    function prepareMapForPrint() {
+        if (!map || typeof map.getCenter !== 'function') return;
+
+        printRestoreState = {
+            center: map.getCenter(),
+            zoom: map.getZoom()
+        };
+
+        var selectedSite = getSelectedPrintSite();
+        var bounds = L.latLngBounds();
+
+        if (selectedSite) {
+            var lat = parseFloat(selectedSite.latitude);
+            var lng = parseFloat(selectedSite.longitude);
+            if (isFinite(lat) && isFinite(lng)) {
+                bounds.extend([lat, lng]);
+            }
+        } else {
+            currentFilteredSites.forEach(function(site) {
+                var lat = parseFloat(site.latitude);
+                var lng = parseFloat(site.longitude);
+                if (isFinite(lat) && isFinite(lng)) {
+                    bounds.extend([lat, lng]);
+                }
+            });
+        }
+
+        if (bounds.isValid && bounds.isValid()) {
+            if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
+                map.setView(bounds.getCenter(), Math.max(map.getZoom(), 12));
+            } else {
+                map.fitBounds(bounds, { padding: [70, 70], maxZoom: 12, animate: false });
+            }
+        }
+
+        map.invalidateSize();
+    }
+
+    function restoreMapAfterPrint() {
+        if (!printRestoreState) return;
+        map.setView(printRestoreState.center, printRestoreState.zoom, { animate: false });
+        map.invalidateSize();
+        printRestoreState = null;
+    }
 
     function makePopup(site) {
         var ind = fmt(site.individus), men = fmt(site.menages);
@@ -636,9 +1005,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function renderMarkers() {
         markerLayer.clearLayers();
-        polygonLayer.clearLayers();
+        resetThematicControl();
         listWrap.innerHTML = '';
         activeCard = null;
+        activeSite = null;
 
         var q = searchInp.value.toLowerCase().trim();
         var list = q ? allSites.filter(function(s){ return s.nom.toLowerCase().includes(q); }) : allSites;
@@ -664,28 +1034,33 @@ document.addEventListener('DOMContentLoaded', function () {
             var ind     = fmt(site.individus);
             var men     = fmt(site.menages);
             var geo     = (site.province || '') + (site.territoire ? ' \u203a ' + site.territoire : '');
-            var hasPoly = !!site.geojson_data;
+            var normalizedLayers = normalizeGeojsonLayers(site);
+            var hasPoly = normalizedLayers.length > 0;
 
-            // Polygone GeoJSON
-            var geoLayer = null;
-            if (hasPoly) {
-                try {
-                    geoLayer = L.geoJSON(site.geojson_data, {
-                        style: { color:'#7c3aed', weight:2, opacity:0.85, fillColor:'#8b5cf6', fillOpacity:0.15 }
-                    });
-                    geoLayer.bindPopup(popup, { maxWidth:290 });
-                    geoLayer.on('mouseover', function(e){ e.target.setStyle({ fillOpacity:0.32, weight:3 }); });
-                    geoLayer.on('mouseout',  function(e){ e.target.setStyle({ fillOpacity:0.15, weight:2 }); });
-                    geoLayer.on('click', function() {
-                        var b = geoLayer.getBounds && geoLayer.getBounds();
-                        if (b && b.isValid && b.isValid()) {
-                            map.fitBounds(b, { padding:[55,55], maxZoom:14 });
-                        }
-                    });
-                    polygonLayer.addLayer(geoLayer);
-                    try { var pb = geoLayer.getBounds(); if (pb.isValid()){ bounds.push(pb.getSouthWest(), pb.getNorthEast()); } } catch(e){}
-                } catch(e){ geoLayer = null; }
-            }
+            normalizedLayers.forEach(function(layerMeta) {
+                var styleIndex = deferredThematicLayers.length;
+                var layerGroup = L.layerGroup();
+                var labelBase = site.nom + ' - ' + layerMeta.name;
+                var controlLabel = labelBase;
+                var duplicateIndex = 2;
+                while (Object.prototype.hasOwnProperty.call(thematicOverlayMaps, controlLabel)) {
+                    controlLabel = labelBase + ' (' + duplicateIndex + ')';
+                    duplicateIndex += 1;
+                }
+
+                thematicOverlayMaps[controlLabel] = layerGroup;
+                deferredThematicLayers.push({
+                    site: site,
+                    layerMeta: layerMeta,
+                    layerGroup: layerGroup,
+                    styleIndex: styleIndex,
+                    popupHtml: popup,
+                    controlLabel: controlLabel,
+                    loaded: false,
+                    hasError: false,
+                    pendingPromise: null
+                });
+            });
 
             // Marqueur
             var m = L.marker([lat, lng]);
@@ -708,22 +1083,40 @@ document.addEventListener('DOMContentLoaded', function () {
                     + (hasPoly ? '<span class="sc-poly">&#9724; Polygone</span>' : '')
                 + '</div>';
 
-            (function(lat, lng, m, gl, card) {
+            (function(lat, lng, m, card, siteLayers) {
+                card._site = site;
                 card.addEventListener('click', function() {
                     if (activeCard) activeCard.classList.remove('active');
                     activeCard = card;
+                    activeSite = site;
                     card.classList.add('active');
                     card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-                    if (gl) {
-                        try { map.fitBounds(gl.getBounds(), { padding:[60,60], maxZoom:14 }); gl.openPopup(); return; } catch(e){}
+
+                    if (Array.isArray(siteLayers) && siteLayers.length > 0) {
+                        try {
+                            var firstLayer = L.geoJSON(siteLayers[0].geojson);
+                            var firstBounds = firstLayer.getBounds && firstLayer.getBounds();
+                            if (firstBounds && firstBounds.isValid && firstBounds.isValid()) {
+                                map.fitBounds(firstBounds, { padding:[60,60], maxZoom:14 });
+                                return;
+                            }
+                        } catch (e) {}
                     }
+
                     map.setView([lat, lng], 13);
                     m.openPopup();
                 });
-            })(lat, lng, m, geoLayer, card);
+            })(lat, lng, m, card, normalizedLayers);
 
             listWrap.appendChild(card);
         });
+
+        if (Object.keys(thematicOverlayMaps).length > 0) {
+            thematicOverlayControl = L.control.layers(null, thematicOverlayMaps, {
+                position: 'topright',
+                collapsed: true
+            }).addTo(map);
+        }
 
         if (bounds.length > 1) map.fitBounds(bounds, { padding:[40,40], maxZoom:10 });
         else if (bounds.length === 1) map.setView(bounds[0], 13);
@@ -787,17 +1180,22 @@ document.addEventListener('DOMContentLoaded', function () {
     map.on('zoomend', updateVisibleSitesTable);
 
     document.getElementById('btn-print').addEventListener('click', function() {
+        applyPrintPageSize();
         updatePrintDetails();
+        prepareMapForPrint();
         map.invalidateSize();
         setTimeout(function(){ window.print(); }, 120);
     });
 
     window.addEventListener('beforeprint', function() {
+        applyPrintPageSize();
         updatePrintDetails();
+        prepareMapForPrint();
         map.invalidateSize();
     });
 
     window.addEventListener('afterprint', function() {
+        restoreMapAfterPrint();
         setTimeout(function(){ map.invalidateSize(); }, 120);
     });
 

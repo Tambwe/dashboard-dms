@@ -7,11 +7,12 @@ use App\Models\Province;
 use App\Models\Territoire;
 use App\Models\Commune;
 use App\Models\Site;
-use App\Models\SiteMouvementPopulation;
 use App\Models\Coordinateur;
 use App\Models\Gestionnaire;
 use App\Models\CategorieSite;
+use App\Services\SitePopulationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 
 class GeographicController extends Controller
@@ -114,8 +115,58 @@ class GeographicController extends Controller
             return response()->json([]);
         }
 
-        $sites = Site::where('commune_id', $communeId)
-            ->select('id', 'nom', 'code_site', 'commune_id')
+        $selectColumns = ['id'];
+        foreach (['nom', 'code_site', 'commune_id', 'zone_sante'] as $column) {
+            if (Schema::hasColumn('sites', $column)) {
+                $selectColumns[] = $column;
+            }
+        }
+
+        $query = Site::query();
+
+        if (Schema::hasColumn('sites', 'date_fermeture')) {
+            $query->whereNull('date_fermeture');
+        }
+
+        $commune = Commune::select('id', 'name')->find($communeId);
+        $hasCommuneColumn = Schema::hasColumn('sites', 'commune_id');
+        $hasZoneSanteColumn = Schema::hasColumn('sites', 'zone_sante');
+
+        if (! $hasCommuneColumn && ! $hasZoneSanteColumn) {
+            return response()->json(
+                $query
+                    ->select($selectColumns)
+                    ->orderBy('nom')
+                    ->get()
+            );
+        }
+
+        $normalizedCommuneName = $commune ? strtolower(trim((string) $commune->name)) : null;
+
+        if ($hasCommuneColumn && $hasZoneSanteColumn && $commune) {
+            $query->where(function ($siteQuery) use ($communeId, $commune, $normalizedCommuneName) {
+                $siteQuery->where('commune_id', $communeId)
+                    ->orWhere('zone_sante', $commune->name);
+
+                if ($normalizedCommuneName !== '') {
+                    $siteQuery->orWhereRaw('LOWER(TRIM(zone_sante)) = ?', [$normalizedCommuneName]);
+                }
+            });
+        } elseif ($hasCommuneColumn) {
+            $query->where('commune_id', $communeId);
+        } elseif ($hasZoneSanteColumn && $commune) {
+            $query->where(function ($siteQuery) use ($commune, $normalizedCommuneName) {
+                $siteQuery->where('zone_sante', $commune->name);
+                if ($normalizedCommuneName !== '') {
+                    $siteQuery->orWhereRaw('LOWER(TRIM(zone_sante)) = ?', [$normalizedCommuneName]);
+                }
+            });
+        } else {
+            return response()->json([]);
+        }
+
+        $sites = $query
+            ->select($selectColumns)
             ->orderBy('nom')
             ->get();
 
@@ -163,10 +214,36 @@ class GeographicController extends Controller
      */
     public function getSitesWithCoordinates(Request $request)
     {
+        if (!Schema::hasColumn('sites', 'latitude') || !Schema::hasColumn('sites', 'longitude')) {
+            return response()->json([
+                'sites' => [],
+                'total' => 0,
+                'considered_period' => null,
+                'requested_period' => $request->input('periode'),
+                'used_fallback_period' => false,
+                'fallback_note' => null,
+            ]);
+        }
+
+        $selectedPeriod = null;
+        $currentPeriod = now()->startOfMonth();
+
+        if ($request->filled('periode') && (preg_match('/^\d{4}-\d{2}$/', $request->periode) || preg_match('/^\d{2}\/\d{4}$/', $request->periode))) {
+            $parsed = preg_match('/^\d{2}\/\d{4}$/', $request->periode)
+                ? Carbon::createFromFormat('m/Y', $request->periode)->startOfMonth()
+                : Carbon::createFromFormat('Y-m', $request->periode)->startOfMonth();
+
+            $selectedPeriod = $parsed->gt($currentPeriod) ? $currentPeriod : $parsed;
+        }
+
         $query = Site::whereNotNull('latitude')
             ->whereNotNull('longitude')
             ->where('latitude', '!=', 0)
             ->where('longitude', '!=', 0);
+
+        if (!$selectedPeriod && Schema::hasColumn('sites', 'date_fermeture')) {
+            $query->whereNull('date_fermeture');
+        }
 
         // Filtrer par province
         if ($request->has('province_id') && $request->province_id) {
@@ -175,8 +252,12 @@ class GeographicController extends Controller
             if ($province) {
                 $query->where(function ($siteQuery) use ($request, $province) {
                     $siteQuery->whereHas('commune.territoire.province', function ($q) use ($request) {
-                        $q->where('id', $request->province_id);
-                    })->orWhere('province', $province->name);
+                        $q->where('provinces.id', $request->province_id);
+                    });
+
+                    if (Schema::hasColumn('sites', 'province')) {
+                        $siteQuery->orWhere('province', $province->name);
+                    }
                 });
             }
         }
@@ -188,20 +269,27 @@ class GeographicController extends Controller
             if ($territoire) {
                 $query->where(function ($siteQuery) use ($request, $territoire) {
                     $siteQuery->whereHas('commune.territoire', function ($q) use ($request) {
-                        $q->where('id', $request->territoire_id);
-                    })->orWhere('territoire', $territoire->name);
+                        $q->where('territoires.id', $request->territoire_id);
+                    });
+
+                    if (Schema::hasColumn('sites', 'territoire')) {
+                        $siteQuery->orWhere('territoire', $territoire->name);
+                    }
                 });
             }
         }
 
         // Filtrer par commune (zone de santé)
-        if ($request->has('commune_id') && $request->commune_id) {
+        if (Schema::hasColumn('sites', 'commune_id') && $request->has('commune_id') && $request->commune_id) {
             $commune = Commune::select('id', 'name')->find($request->commune_id);
 
             if ($commune) {
                 $query->where(function ($siteQuery) use ($request, $commune) {
-                    $siteQuery->where('commune_id', $request->commune_id)
-                        ->orWhere('zone_sante', $commune->name);
+                    $siteQuery->where('commune_id', $request->commune_id);
+
+                    if (Schema::hasColumn('sites', 'zone_sante')) {
+                        $siteQuery->orWhere('zone_sante', $commune->name);
+                    }
                 });
             } else {
                 $query->where('commune_id', $request->commune_id);
@@ -212,10 +300,13 @@ class GeographicController extends Controller
         if ($request->has('zone_sante') && trim((string) $request->zone_sante) !== '') {
             $zoneSante = trim((string) $request->zone_sante);
             $query->where(function ($siteQuery) use ($zoneSante) {
-                $siteQuery->where('zone_sante', $zoneSante)
-                    ->orWhereHas('commune', function ($q) use ($zoneSante) {
-                        $q->where('name', $zoneSante);
-                    });
+                $siteQuery->whereHas('commune', function ($q) use ($zoneSante) {
+                    $q->where('name', $zoneSante);
+                });
+
+                if (Schema::hasColumn('sites', 'zone_sante')) {
+                    $siteQuery->orWhere('zone_sante', $zoneSante);
+                }
             });
         }
 
@@ -225,72 +316,69 @@ class GeographicController extends Controller
         }
 
         // Filtrer par coordinateur
-        if ($request->has('coordinateur_id') && $request->coordinateur_id) {
+        if (Schema::hasColumn('sites', 'coordinateur_id') && $request->has('coordinateur_id') && $request->coordinateur_id) {
             $query->where('coordinateur_id', $request->coordinateur_id);
         }
 
         // Filtrer par gestionnaire
-        if ($request->has('gestionnaire_id') && $request->gestionnaire_id) {
+        if (Schema::hasColumn('sites', 'gestionnaire_id') && $request->has('gestionnaire_id') && $request->gestionnaire_id) {
             $query->where('gestionnaire_id', $request->gestionnaire_id);
         }
 
         // Filtrer par catégorie de site
-        if ($request->has('categorie_site_id') && $request->categorie_site_id) {
+        if (Schema::hasColumn('sites', 'categorie_site_id') && $request->has('categorie_site_id') && $request->categorie_site_id) {
             $query->where('categorie_site_id', $request->categorie_site_id);
         }
 
-        $sites = $query->select(
-            'id',
-            'nom',
-            'code_site',
-            'latitude',
-            'longitude',
-            'individus',
-            'menages',
-            'province',
-            'territoire',
-            'zone_sante',
-            'categorie_site_id',
-            'gestionnaire_id',
-            'coordinateur_id',
-            'organisation_id',
-            'geojson_data'
-        )
-        ->with([
-            'categorieSite:id,name',
-            'gestionnaire:id,name',
-            'coordinateur:id,name',
-            'organisation:id,name'
-        ])
-        ->get();
-
-        if ($request->filled('periode') && (preg_match('/^\d{4}-\d{2}$/', $request->periode) || preg_match('/^\d{2}\/\d{4}$/', $request->periode))) {
-            $selectedPeriod = preg_match('/^\d{2}\/\d{4}$/', $request->periode)
-                ? Carbon::createFromFormat('m/Y', $request->periode)->startOfMonth()
-                : Carbon::createFromFormat('Y-m', $request->periode)->startOfMonth();
-
-            $movements = SiteMouvementPopulation::query()
-                ->where('type_mouvement', 'recensement')
-                ->whereYear('date_mouvement', (int) $selectedPeriod->format('Y'))
-                ->whereMonth('date_mouvement', (int) $selectedPeriod->format('m'))
-                ->whereIn('site_id', $sites->pluck('id'))
-                ->get()
-                ->keyBy('site_id');
-
-            $sites = $sites
-                ->filter(function ($site) use ($movements) {
-                    return $movements->has($site->id);
-                })
-                ->map(function ($site) use ($movements) {
-                    $movement = $movements->get($site->id);
-                    $site->menages = $movement->menages;
-                    $site->individus = $movement->individus;
-
-                    return $site;
-                })
-                ->values();
+        $selectColumns = ['id'];
+        foreach (['nom', 'code_site', 'latitude', 'longitude', 'province', 'territoire', 'zone_sante'] as $column) {
+            if (Schema::hasColumn('sites', $column)) {
+                $selectColumns[] = $column;
+            }
         }
 
-        return response()->json($sites);
+        foreach (['categorie_site_id', 'gestionnaire_id', 'coordinateur_id', 'organisation_id'] as $column) {
+            if (Schema::hasColumn('sites', $column)) {
+                $selectColumns[] = $column;
+            }
+        }
+
+        $siteRelations = [];
+        if (Schema::hasColumn('sites', 'categorie_site_id')) {
+            $siteRelations[] = 'categorieSite:id,name';
+        }
+        if (Schema::hasColumn('sites', 'gestionnaire_id')) {
+            $siteRelations[] = 'gestionnaire:id,name';
+        }
+        if (Schema::hasColumn('sites', 'coordinateur_id')) {
+            $siteRelations[] = 'coordinateur:id,name';
+        }
+        if (Schema::hasColumn('sites', 'organisation_id')) {
+            $siteRelations[] = 'organisation:id,name';
+        }
+
+        $sites = $query->select($selectColumns);
+
+        if (!empty($siteRelations)) {
+            $sites = $sites->with($siteRelations);
+        }
+
+        $sites = $sites->get();
+        app(SitePopulationService::class)->applyToSites(
+            $sites,
+            $selectedPeriod?->copy()->endOfMonth()
+        );
+        $consideredPeriod = $selectedPeriod;
+        $usedFallback = false;
+        $fallbackNote = null;
+
+        return response()->json([
+            'sites' => $sites->values(),
+            'count' => $sites->count(),
+            'periode' => $selectedPeriod?->format('m/Y'),
+            'periode_consideree' => $consideredPeriod?->format('m/Y'),
+            'fallback_note' => $fallbackNote,
+            'used_fallback' => $usedFallback,
+        ]);
     }
 }

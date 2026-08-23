@@ -14,8 +14,12 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             OrganisationSeeder::class,
+            AdminBoundariesSeeder::class,
             SuperAdminSeeder::class,
+            DefaultUsersSeeder::class,
+            SigTestUserSeeder::class,
             OssatChoixSeeder::class,
+            MobileQuestionnaireSeeder::class,
         ]);
     }
 }

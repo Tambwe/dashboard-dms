@@ -137,7 +137,7 @@
                             class="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                             @if($ossat->site_id)
                                 <option value="{{ $ossat->site_id }}" selected>
-                                    {{ $ossat->site ? $ossat->site->nom . ($ossat->site->code_site ? ' (' . $ossat->site->code_site . ')' : '') : $ossat->site_nom }}
+                                    {{ $ossat->site ? $ossat->site->nom . ($ossat->site->code_site ? ' (' . $ossat->site->code_site . ')' : '') . ($ossat->site->date_fermeture ? ' [Site fermé]' : '') : $ossat->site_nom }}
                                 </option>
                             @else
                                 <option value="">Sélectionner d'abord le territoire</option>
@@ -1038,7 +1038,8 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function(sites) {
                 siteSelect.innerHTML = '<option value="">-- Sélectionner le site --</option>';
                 sites.forEach(function(s) {
-                    const opt = new Option(s.nom + (s.code_site ? ' (' + s.code_site + ')' : ''), s.id);
+                    const fermetureLabel = s.date_fermeture ? ' [Site fermé]' : '';
+                    const opt = new Option(s.nom + (s.code_site ? ' (' + s.code_site + ')' : '') + fermetureLabel, s.id);
                     opt.dataset.nom = s.nom;
                     opt.dataset.code = s.code_site || '';
                     if (selectedSiteId && s.id == selectedSiteId) opt.selected = true;

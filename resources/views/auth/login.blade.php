@@ -13,6 +13,7 @@
 
     <!-- Scripts -->
     <x-vite-manifest-loader :assets="['resources/css/app.css', 'resources/js/app.js']" />
+    <x-sweetalert-flash />
 </head>
 <body class="h-full bg-gradient-to-br from-primary-50 via-white to-secondary-50 dark:from-gray-900 dark:to-gray-800">
     <div class="flex min-h-full flex-col justify-center py-12 sm:px-6 lg:px-8">
@@ -110,8 +111,8 @@
 
                     <div class="mt-4 space-y-2 text-xs text-gray-600 dark:text-gray-400">
                         <p><strong>Super Admin:</strong> superadmin@dms-cccm.org / dmscccm@2026</p>
-                        <p><strong>Admin HCR:</strong> admin@hcr.com / dmscccm@2026</p>
-                        <p><strong>Admin WNH:</strong> admin@wnh.com / dmscccm@2026</p>
+                        <p><strong>Admin Organisation:</strong> admin.org@dms-cccm.org / dmscccm@2026</p>
+                        <p><strong>Agent Collecte Mobile:</strong> heaney.titus@example.org / password</p>
                     </div>
                 </div>
             </div>

@@ -59,7 +59,7 @@
                             @foreach($sites as $site)
                             <option value="{{ $site->id }}" 
                                     {{ (old('site_id', $selectedSite->id ?? $serviceProfile->site_id ?? '') == $site->id) ? 'selected' : '' }}>
-                                {{ $site->nom }} - {{ $site->commune->nom ?? '' }} ({{ $site->organisation->nom ?? 'Sans organisation' }})
+                                {{ $site->nom }}{{ $site->date_fermeture ? ' [Site fermé]' : '' }} - {{ $site->commune->nom ?? '' }} ({{ $site->organisation->nom ?? 'Sans organisation' }})
                             </option>
                             @endforeach
                         </select>

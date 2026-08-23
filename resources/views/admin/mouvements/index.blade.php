@@ -1,21 +1,26 @@
 @extends('layouts.app')
 
-@section('title', 'Mouvements de population')
+@section('title', $historyMode ? 'Historique des mouvements' : 'Mouvements de population')
 
 @section('content')
 <div class="space-y-6">
     <!-- En-tête -->
     <div class="flex items-center justify-between">
         <div>
-            <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Mouvements de population</h2>
+            <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
+                {{ $historyMode ? 'Historique des mouvements' : 'Mouvements de population' }}
+            </h2>
             <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                @if(auth()->user()->role === 'super_admin')
+                @if($historyMode)
+                    Registre complet de tous les mouvements conservés, quel que soit leur statut — {{ $mouvements->total() }} résultat(s)
+                @elseif(auth()->user()->role === 'super_admin')
                     Tous les flux de population dans tous les sites
                 @else
                     Historique des flux de population pour votre organisation
                 @endif
             </p>
         </div>
+        @unless($historyMode)
         <div class="flex items-center gap-3">
             {{-- Bouton import Excel --}}
             <button onclick="document.getElementById('modal-import').classList.remove('hidden')"
@@ -32,6 +37,7 @@
                 Nouveau mouvement
             </a>
         </div>
+        @endunless
     </div>
 
     @if(session('success'))
@@ -62,27 +68,108 @@
 
     <!-- Filtres -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-        <form method="GET" action="{{ route('admin.mouvements.index') }}" class="grid grid-cols-1 md:grid-cols-4 gap-4" id="mouvements-filters-form">
+        <form method="GET" action="{{ route($historyMode ? 'admin.mouvements.history' : 'admin.mouvements.index') }}" class="grid grid-cols-1 md:grid-cols-4 gap-4" id="mouvements-filters-form">
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Site</label>
-                <select name="site_id" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
-                    <option value="">Tous les sites</option>
+                @php
+                    $selectedSite = $sites->firstWhere('id', (int) request('site_id'));
+                    $selectedSiteLabel = 'Tous les sites';
+
+                    if ($selectedSite) {
+                        $selectedProvince = $selectedSite->province ?: $selectedSite->commune?->territoire?->province?->name;
+                        $selectedTerritoire = $selectedSite->territoire ?: $selectedSite->commune?->territoire?->name;
+                        $selectedCommune = $selectedSite->zone_sante ?: $selectedSite->commune?->name;
+                        $selectedLocation = collect([$selectedProvince, $selectedTerritoire, $selectedCommune])->filter()->join(' › ');
+                        $selectedSiteLabel = $selectedSite->nom
+                            .($selectedSite->code_site ? ' ('.$selectedSite->code_site.')' : '')
+                            .($selectedLocation ? ' — '.$selectedLocation : '')
+                            .($selectedSite->date_fermeture ? ' [Site fermé]' : '');
+                    }
+                @endphp
+                <div id="site-filter-combobox" class="relative">
+                    <input type="hidden" id="site-filter-value" name="site_id" value="{{ request('site_id') }}">
+                    <button
+                        type="button"
+                        id="site-filter-trigger"
+                        aria-haspopup="listbox"
+                        aria-expanded="false"
+                        class="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-left text-gray-900 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    >
+                        <span id="site-filter-label" class="truncate">{{ $selectedSiteLabel }}</span>
+                        <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </button>
+                    <div
+                        id="site-filter-panel"
+                        class="absolute z-50 mt-1 hidden w-full rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-600 dark:bg-gray-800 md:min-w-[32rem]"
+                    >
+                        <div class="border-b border-gray-200 p-3 dark:border-gray-700">
+                            <input
+                                type="search"
+                                id="site-filter-search"
+                                placeholder="Rechercher un site, un code ou une localisation…"
+                                autocomplete="off"
+                                class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                            >
+                            <p id="site-filter-search-result" class="mt-1 text-xs text-gray-500 dark:text-gray-400"></p>
+                        </div>
+                        <div id="site-filter-options" role="listbox" class="max-h-72 overflow-y-auto p-1">
+                            <button
+                                type="button"
+                                role="option"
+                                data-value=""
+                                data-label="Tous les sites"
+                                data-search="tous les sites"
+                                aria-selected="{{ request('site_id') ? 'false' : 'true' }}"
+                                class="site-filter-option w-full rounded-md px-3 py-2 text-left text-sm hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 {{ request('site_id') ? '' : 'bg-primary-50 dark:bg-primary-900/20' }}"
+                            >
+                                Tous les sites
+                            </button>
                     @foreach($sites as $site)
-                        <option value="{{ $site->id }}" {{ request('site_id') == $site->id ? 'selected' : '' }}>
-                            {{ $site->nom }} ({{ $site->code_site }})
-                        </option>
+                        @php
+                            $siteProvince = $site->province ?: $site->commune?->territoire?->province?->name;
+                            $siteTerritoire = $site->territoire ?: $site->commune?->territoire?->name;
+                            $siteCommune = $site->zone_sante ?: $site->commune?->name;
+                            $siteLocation = collect([$siteProvince, $siteTerritoire, $siteCommune])->filter()->join(' › ');
+                            $siteLabel = $site->nom
+                                .($site->code_site ? ' ('.$site->code_site.')' : '')
+                                .($siteLocation ? ' — '.$siteLocation : '')
+                                .($site->date_fermeture ? ' [Site fermé]' : '');
+                        @endphp
+                            <button
+                                type="button"
+                                role="option"
+                                data-value="{{ $site->id }}"
+                                data-label="{{ $siteLabel }}"
+                                data-search="{{ mb_strtolower($site->nom.' '.$site->code_site.' '.$siteLocation) }}"
+                                aria-selected="{{ request('site_id') == $site->id ? 'true' : 'false' }}"
+                                class="site-filter-option w-full rounded-md px-3 py-2 text-left text-sm hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 {{ request('site_id') == $site->id ? 'bg-primary-50 dark:bg-primary-900/20' : '' }}"
+                            >
+                                <span class="block font-medium">
+                                    {{ $site->nom }}{{ $site->code_site ? ' ('.$site->code_site.')' : '' }}
+                                </span>
+                                @if($siteLocation)
+                                    <span class="block text-xs text-gray-500 dark:text-gray-400">{{ $siteLocation }}</span>
+                                @endif
+                                @if($site->date_fermeture)
+                                    <span class="block text-xs text-red-600 dark:text-red-400">Site fermé</span>
+                                @endif
+                            </button>
                     @endforeach
-                </select>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Type</label>
                 <select name="type_mouvement" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
                     <option value="">Tous les types</option>
-                    <option value="arrivee">Arrivée</option>
-                    <option value="depart">Départ</option>
-                    <option value="recensement">Recensement</option>
-                    <option value="ajustement">Ajustement</option>
+                    <option value="arrivee" {{ request('type_mouvement') === 'arrivee' ? 'selected' : '' }}>Arrivée</option>
+                    <option value="depart" {{ request('type_mouvement') === 'depart' ? 'selected' : '' }}>Départ</option>
+                    <option value="recensement" {{ request('type_mouvement') === 'recensement' ? 'selected' : '' }}>Recensement</option>
+                    <option value="ajustement" {{ request('type_mouvement') === 'ajustement' ? 'selected' : '' }}>Ajustement</option>
                 </select>
             </div>
 
@@ -90,9 +177,9 @@
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Statut</label>
                 <select name="statut" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
                     <option value="">Tous les statuts</option>
-                    <option value="en_attente">En attente</option>
-                    <option value="valide">Validé</option>
-                    <option value="rejete">Rejeté</option>
+                    <option value="en_attente" {{ request('statut') === 'en_attente' ? 'selected' : '' }}>En attente</option>
+                    <option value="valide" {{ request('statut') === 'valide' ? 'selected' : '' }}>Validé</option>
+                    <option value="rejete" {{ request('statut') === 'rejete' ? 'selected' : '' }}>Rejeté</option>
                 </select>
             </div>
 
@@ -106,7 +193,7 @@
             </div>
 
             <div class="md:col-span-4 flex justify-end space-x-3">
-                <a href="{{ route('admin.mouvements.index') }}" class="filter-button">Réinitialiser</a>
+                <a href="{{ route($historyMode ? 'admin.mouvements.history' : 'admin.mouvements.index') }}" class="filter-button">Réinitialiser</a>
                 <button type="submit" class="primary-button">
                     <svg class="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -121,10 +208,109 @@
         document.addEventListener('DOMContentLoaded', function () {
             const periodeInput = document.getElementById('periode-filter');
             const form = document.getElementById('mouvements-filters-form');
+            const siteCombobox = document.getElementById('site-filter-combobox');
+            const siteTrigger = document.getElementById('site-filter-trigger');
+            const sitePanel = document.getElementById('site-filter-panel');
+            const siteSearch = document.getElementById('site-filter-search');
+            const siteValue = document.getElementById('site-filter-value');
+            const siteLabel = document.getElementById('site-filter-label');
+            const siteSearchResult = document.getElementById('site-filter-search-result');
+            const siteOptions = Array.from(document.querySelectorAll('.site-filter-option'));
 
             if (periodeInput && form) {
                 periodeInput.addEventListener('change', function () {
                     form.submit();
+                });
+            }
+
+            if (siteCombobox && siteTrigger && sitePanel && siteSearch && siteValue && siteLabel) {
+                const normalize = (value) => value
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '')
+                    .toLocaleLowerCase('fr');
+
+                const filterOptions = () => {
+                    const query = normalize(siteSearch.value.trim());
+                    let visibleCount = 0;
+
+                    siteOptions.forEach((option, index) => {
+                        const matches = query === '' || normalize(option.dataset.search || '').includes(query);
+                        option.hidden = !matches;
+                        if (index > 0 && matches) visibleCount++;
+                    });
+
+                    siteSearchResult.textContent = query === ''
+                        ? ''
+                        : `${visibleCount} site(s) trouvé(s)`;
+                };
+
+                const openPanel = () => {
+                    sitePanel.classList.remove('hidden');
+                    siteTrigger.setAttribute('aria-expanded', 'true');
+                    window.requestAnimationFrame(() => {
+                        siteSearch.focus();
+                        siteSearch.select();
+                    });
+                };
+
+                const closePanel = () => {
+                    sitePanel.classList.add('hidden');
+                    siteTrigger.setAttribute('aria-expanded', 'false');
+                };
+
+                siteTrigger.addEventListener('click', () => {
+                    if (sitePanel.classList.contains('hidden')) {
+                        openPanel();
+                    } else {
+                        closePanel();
+                    }
+                });
+
+                siteSearch.addEventListener('input', filterOptions);
+
+                siteOptions.forEach((option) => {
+                    option.addEventListener('click', () => {
+                        siteValue.value = option.dataset.value || '';
+                        siteLabel.textContent = option.dataset.label || 'Tous les sites';
+
+                        siteOptions.forEach((candidate) => {
+                            const selected = candidate === option;
+                            candidate.setAttribute('aria-selected', selected ? 'true' : 'false');
+                            candidate.classList.toggle('bg-primary-50', selected);
+                            candidate.classList.toggle('dark:bg-primary-900/20', selected);
+                        });
+
+                        closePanel();
+                        siteTrigger.focus();
+                    });
+                });
+
+                siteSearch.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape') {
+                        closePanel();
+                        siteTrigger.focus();
+                    }
+
+                    if (event.key === 'ArrowDown') {
+                        const firstVisibleOption = siteOptions.find((option) => !option.hidden);
+                        if (firstVisibleOption) {
+                            event.preventDefault();
+                            firstVisibleOption.focus();
+                        }
+                    }
+                });
+
+                siteTrigger.addEventListener('keydown', (event) => {
+                    if (event.key === 'ArrowDown') {
+                        event.preventDefault();
+                        openPanel();
+                    }
+                });
+
+                document.addEventListener('click', (event) => {
+                    if (!siteCombobox.contains(event.target)) {
+                        closePanel();
+                    }
                 });
             }
         });
@@ -140,12 +326,18 @@
                         {{ $mouvements->total() }}
                     </span>
                 </h3>
-                <button class="text-sm text-primary-600 dark:text-primary-400 hover:underline font-medium">
-                    <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Exporter
-                </button>
+                @if($historyMode)
+                    <span class="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
+                        Lecture seule · aucune suppression
+                    </span>
+                @else
+                    <button class="text-sm text-primary-600 dark:text-primary-400 hover:underline font-medium">
+                        <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        Exporter
+                    </button>
+                @endif
             </div>
         </div>
 
@@ -163,7 +355,9 @@
                             <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Individus</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Créé par</th>
                             @if(auth()->user()->role === 'super_admin')
-                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                    {{ $historyMode ? 'Traitement' : 'Actions' }}
+                                </th>
                             @endif
                         </tr>
                     </thead>
@@ -174,6 +368,19 @@
                                     {{ $mouvement->date_mouvement->format('d/m/Y') }}
                                 </td>
                                 <td class="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                                    @php
+                                        $movementSite = $mouvement->site;
+                                        $movementProvince = $movementSite->province ?: $movementSite->commune?->territoire?->province?->name;
+                                        $movementTerritoire = $movementSite->territoire ?: $movementSite->commune?->territoire?->name;
+                                        $movementCommune = $movementSite->zone_sante ?: $movementSite->commune?->name;
+                                    @endphp
+                                    <div class="mb-1 text-xs font-medium text-primary-600 dark:text-primary-400">
+                                        {{ $movementProvince ?: 'Province non renseignée' }}
+                                        <span class="text-gray-400">›</span>
+                                        {{ $movementTerritoire ?: 'Territoire non renseigné' }}
+                                        <span class="text-gray-400">›</span>
+                                        {{ $movementCommune ?: 'Commune non renseignée' }}
+                                    </div>
                                     <div class="font-medium">{{ $mouvement->site->nom }}</div>
                                     <div class="text-xs text-gray-500 dark:text-gray-400">{{ $mouvement->site->code_site }}</div>
                                 </td>
@@ -216,14 +423,14 @@
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900 dark:text-white">
                                     @if($mouvement->type_mouvement === 'depart')
-                                        <span class="text-red-600 dark:text-red-400">-{{ number_format($mouvement->menages) }}</span>
+                                        <span class="text-red-600 dark:text-red-400">-{{ number_format(abs($mouvement->menages)) }}</span>
                                     @else
                                         <span class="text-green-600 dark:text-green-400">+{{ number_format($mouvement->menages) }}</span>
                                     @endif
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900 dark:text-white">
                                     @if($mouvement->type_mouvement === 'depart')
-                                        <span class="text-red-600 dark:text-red-400">-{{ number_format($mouvement->individus) }}</span>
+                                        <span class="text-red-600 dark:text-red-400">-{{ number_format(abs($mouvement->individus)) }}</span>
                                     @else
                                         <span class="text-green-600 dark:text-green-400">+{{ number_format($mouvement->individus) }}</span>
                                     @endif
@@ -235,7 +442,13 @@
                                 @if(auth()->user()->role === 'super_admin')
                                     <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
                                         @if($mouvement->statut === 'en_attente')
-                                            <div class="flex justify-end space-x-2">
+                                            @if($historyMode)
+                                                <div class="text-xs text-yellow-700 dark:text-yellow-300">
+                                                    <div>En attente de traitement</div>
+                                                    <div class="text-gray-500 dark:text-gray-400">Depuis {{ $mouvement->created_at->format('d/m/Y H:i') }}</div>
+                                                </div>
+                                            @else
+                                                <div class="flex justify-end space-x-2">
                                                 <form method="POST" action="{{ route('admin.mouvements.validate', $mouvement->id) }}" class="inline">
                                                     @csrf
                                                     <button type="submit" 
@@ -248,7 +461,8 @@
                                                         class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-md transition-colors">
                                                     ✗ Rejeter
                                                 </button>
-                                            </div>
+                                                </div>
+                                            @endif
                                         @elseif($mouvement->statut === 'valide')
                                             <div class="text-xs text-gray-500 dark:text-gray-400">
                                                 <div>Validé par {{ $mouvement->validatedBy->name ?? 'Admin' }}</div>
@@ -279,15 +493,18 @@
                 </svg>
                 <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Aucun mouvement enregistré</h3>
                 <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                    Commencez à enregistrer les flux de population dans vos sites
+                    {{ $historyMode ? 'Aucun mouvement ne correspond aux filtres sélectionnés.' : 'Commencez à enregistrer les flux de population dans vos sites' }}
                 </p>
-                <a href="{{ route('admin.mouvements.create') }}" class="primary-button">
-                    Ajouter un mouvement
-                </a>
+                @unless($historyMode)
+                    <a href="{{ route('admin.mouvements.create') }}" class="primary-button">
+                        Ajouter un mouvement
+                    </a>
+                @endunless
             </div>
         @endif
     </div>
 
+    @unless($historyMode)
     <!-- Modal Import Excel -->
     <div id="modal-import" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div class="relative top-20 mx-auto p-6 border w-full max-w-lg shadow-lg rounded-md bg-white dark:bg-gray-800">
@@ -341,6 +558,7 @@
             </form>
         </div>
     </div>
+    @endunless
 
     <!-- Modal de rejet -->
     <div id="rejectModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">

@@ -1020,7 +1020,8 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function(sites) {
                 siteSelect.innerHTML = '<option value="">-- Sélectionner le site --</option>';
                 sites.forEach(function(s) {
-                    const opt = new Option(s.nom + (s.code_site ? ' (' + s.code_site + ')' : ''), s.id);
+                    const fermetureLabel = s.date_fermeture ? ' [Site fermé]' : '';
+                    const opt = new Option(s.nom + (s.code_site ? ' (' + s.code_site + ')' : '') + fermetureLabel, s.id);
                     opt.dataset.nom = s.nom;
                     opt.dataset.code = s.code_site || '';
                     if (selectedSiteId && s.id == selectedSiteId) opt.selected = true;

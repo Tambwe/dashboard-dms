@@ -1,0 +1,17 @@
+{
+  "name": "DMS Mobile Collection",
+  "short_name": "DMS Mobile",
+  "start_url": "/mobile",
+  "display": "standalone",
+  "background_color": "#e8f4fb",
+  "theme_color": "#2A87C8",
+  "description": "Collecte multisectorielle et géographie de site hors ligne",
+  "icons": [
+    {
+      "src": "/images/logo-dms-cccm.avif",
+      "sizes": "any",
+      "type": "image/avif",
+      "purpose": "any"
+    }
+  ]
+}

@@ -5,9 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\OssatReport;
 use App\Models\Province;
 use App\Models\Site;
-use App\Models\SiteMouvementPopulation;
+use App\Services\SitePopulationService;
 use App\Models\Territoire;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 
 class PublicSiteController extends Controller
 {
@@ -26,7 +27,7 @@ class PublicSiteController extends Controller
     public function show(Site $site)
     {
         $provinces = Province::orderBy('name')->get();
-        $site->load(['commune.territoire.province', 'organisation', 'typeSite']);
+        $site->load(['commune.territoire.province', 'organisation', 'typeSite', 'mouvementsPopulationValides']);
 
         // Priorité au rapport validé, sinon le plus récent
         $ossatReport = OssatReport::where('site_id', $site->id)
@@ -39,13 +40,7 @@ class PublicSiteController extends Controller
             $ossatReport->load(['createdBy', 'validePar']);
         }
 
-        $populationMouvement = SiteMouvementPopulation::where('site_id', $site->id)
-            ->where('statut', 'valide')
-            ->latest('date_mouvement')
-            ->first()
-            ?? SiteMouvementPopulation::where('site_id', $site->id)
-            ->latest('date_mouvement')
-            ->first();
+        $populationMouvement = app(SitePopulationService::class)->snapshotForSite($site->id);
 
         return view('public.site-profil', compact('provinces', 'site', 'ossatReport', 'populationMouvement'));
     }
@@ -57,11 +52,14 @@ class PublicSiteController extends Controller
     {
         $provinces  = Province::orderBy('name')->get();
         $territoires = \App\Models\Territoire::orderBy('name')->get(['id', 'name', 'province_id']);
-        $totalSites = \App\Models\Site::whereNotNull('latitude')
-            ->whereNotNull('longitude')
-            ->where('latitude', '!=', 0)
-            ->where('longitude', '!=', 0)
-            ->count();
+        $totalSites = 0;
+        if (Schema::hasColumn('sites', 'latitude') && Schema::hasColumn('sites', 'longitude')) {
+            $totalSites = \App\Models\Site::whereNotNull('latitude')
+                ->whereNotNull('longitude')
+                ->where('latitude', '!=', 0)
+                ->where('longitude', '!=', 0)
+                ->count();
+        }
         return view('public.cartographie', compact('provinces', 'territoires', 'totalSites'));
     }
 
@@ -72,11 +70,14 @@ class PublicSiteController extends Controller
     {
         $provinces   = Province::orderBy('name')->get();
         $territoires = \App\Models\Territoire::orderBy('name')->get(['id', 'name', 'province_id']);
-        $totalSites  = \App\Models\Site::whereNotNull('latitude')
-            ->whereNotNull('longitude')
-            ->where('latitude', '!=', 0)
-            ->where('longitude', '!=', 0)
-            ->count();
+        $totalSites = 0;
+        if (Schema::hasColumn('sites', 'latitude') && Schema::hasColumn('sites', 'longitude')) {
+            $totalSites = \App\Models\Site::whereNotNull('latitude')
+                ->whereNotNull('longitude')
+                ->where('latitude', '!=', 0)
+                ->where('longitude', '!=', 0)
+                ->count();
+        }
         $mapboxToken = env('MAPBOX_TOKEN', '');
         return view('public.cartographie-mapbox', compact('provinces', 'territoires', 'totalSites', 'mapboxToken'));
     }

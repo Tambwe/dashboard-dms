@@ -18,14 +18,70 @@ class DashboardMap {
         this.containerId = containerId;
         this.map = null;
         this.markersLayer = null;
+        this.baseTileLayer = null;
+        this.fallbackTileLayer = null;
+        this.tileErrorCount = 0;
+        this.fallbackActivated = false;
         this.currentFilters = {};
         this.activeRequest = null;
         this.lastRequestId = 0;
         this.onSiteClick = null;
+        this.lastPayload = null;
         
         // Coordonnées du Nord-Kivu, RDC (centre approximatif)
         this.defaultCenter = [-0.8611, 29.2333]; // Goma, Nord-Kivu
         this.defaultZoom = 9;
+    }
+
+    getSiteTypeLabel(site) {
+        const label = site?.categorie_site?.name;
+        return (typeof label === 'string' && label.trim() !== '') ? label.trim() : 'Non specifie';
+    }
+
+    getTypeColor(typeLabel) {
+        const palette = [
+            '#2563EB',
+            '#DC2626',
+            '#059669',
+            '#D97706',
+            '#7C3AED',
+            '#0891B2',
+            '#BE123C',
+            '#4F46E5',
+        ];
+
+        if (!typeLabel || typeLabel === 'Non specifie') {
+            return '#6B7280';
+        }
+
+        let hash = 0;
+        for (let index = 0; index < typeLabel.length; index += 1) {
+            hash = ((hash << 5) - hash) + typeLabel.charCodeAt(index);
+            hash |= 0;
+        }
+
+        return palette[Math.abs(hash) % palette.length];
+    }
+
+    buildTypeLegend(sites) {
+        const counters = new Map();
+
+        (sites || []).forEach((site) => {
+            if (!Number.isFinite(site?.latitude) || !Number.isFinite(site?.longitude) || site.latitude === 0 || site.longitude === 0) {
+                return;
+            }
+
+            const label = this.getSiteTypeLabel(site);
+            counters.set(label, (counters.get(label) || 0) + 1);
+        });
+
+        return Array.from(counters.entries())
+            .map(([label, count]) => ({
+                label,
+                count,
+                color: this.getTypeColor(label)
+            }))
+            .sort((left, right) => left.label.localeCompare(right.label, 'fr'));
     }
 
     /**
@@ -47,18 +103,47 @@ class DashboardMap {
             scrollWheelZoom: true
         });
 
-        // Ajouter la couche de tuiles OpenStreetMap
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        // Ajouter la couche de tuiles principale
+        this.baseTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
             maxZoom: 19,
             minZoom: 6
         }).addTo(this.map);
+
+        // Fallback automatique si le provider principal échoue.
+        this.baseTileLayer.on('tileerror', () => {
+            this.tileErrorCount += 1;
+
+            if (!this.fallbackActivated && this.tileErrorCount >= 6) {
+                this.activateFallbackTiles();
+            }
+        });
 
         // Créer un groupe de marqueurs
         this.markersLayer = L.layerGroup().addTo(this.map);
 
         // Charger les sites initialement et retourner la promesse
         return this.loadSites();
+    }
+
+    activateFallbackTiles() {
+        if (!this.map || this.fallbackActivated) {
+            return;
+        }
+
+        this.fallbackActivated = true;
+
+        if (this.baseTileLayer) {
+            this.map.removeLayer(this.baseTileLayer);
+        }
+
+        this.fallbackTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+            maxZoom: 19,
+            minZoom: 6,
+        }).addTo(this.map);
+
+        console.warn('Leaflet: bascule automatique vers les tuiles fallback (CARTO).');
     }
 
     /**
@@ -75,42 +160,85 @@ class DashboardMap {
         this.activeRequest = new AbortController();
         
         try {
-            // Construire les paramètres de requête
-            const params = new URLSearchParams();
-            
-            if (filters.province_id) params.append('province_id', filters.province_id);
-            if (filters.territoire_id) params.append('territoire_id', filters.territoire_id);
-            if (filters.commune_id) params.append('commune_id', filters.commune_id);
-            if (filters.site_id) params.append('site_id', filters.site_id);
-            if (filters.coordinateur_id) params.append('coordinateur_id', filters.coordinateur_id);
-            if (filters.gestionnaire_id) params.append('gestionnaire_id', filters.gestionnaire_id);
-            if (filters.categorie_site_id) params.append('categorie_site_id', filters.categorie_site_id);
-            if (filters.periode) params.append('periode', filters.periode);
+            const fetchSitesPayload = async (requestFilters = {}) => {
+                const params = new URLSearchParams();
 
-            // Récupérer les sites depuis l'API
-            const response = await fetch(`/api/geographic/sites-coordinates?${params.toString()}`, {
-                signal: this.activeRequest.signal,
-                headers: {
-                    'Accept': 'application/json'
+                if (requestFilters.province_id) params.append('province_id', requestFilters.province_id);
+                if (requestFilters.territoire_id) params.append('territoire_id', requestFilters.territoire_id);
+                if (requestFilters.commune_id) params.append('commune_id', requestFilters.commune_id);
+                if (requestFilters.site_id) params.append('site_id', requestFilters.site_id);
+                if (requestFilters.coordinateur_id) params.append('coordinateur_id', requestFilters.coordinateur_id);
+                if (requestFilters.gestionnaire_id) params.append('gestionnaire_id', requestFilters.gestionnaire_id);
+                if (requestFilters.categorie_site_id) params.append('categorie_site_id', requestFilters.categorie_site_id);
+                if (requestFilters.periode) params.append('periode', requestFilters.periode);
+
+                const response = await fetch(`/api/geographic/sites-coordinates?${params.toString()}`, {
+                    signal: this.activeRequest.signal,
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
                 }
-            });
 
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
+                return response.json();
+            };
+
+            let payload = await fetchSitesPayload(filters);
+            let rawSites = Array.isArray(payload)
+                ? payload
+                : (Array.isArray(payload?.sites) ? payload.sites : []);
+
+            // Evite une carte vide: si aucune donnée pour la période demandée, retenter sans période.
+            if (filters.periode && rawSites.length === 0) {
+                const fallbackFilters = { ...filters };
+                delete fallbackFilters.periode;
+
+                const fallbackPayload = await fetchSitesPayload(fallbackFilters);
+                const fallbackSites = Array.isArray(fallbackPayload)
+                    ? fallbackPayload
+                    : (Array.isArray(fallbackPayload?.sites) ? fallbackPayload.sites : []);
+
+                if (fallbackSites.length > 0) {
+                    payload = Array.isArray(fallbackPayload)
+                        ? fallbackPayload
+                        : {
+                            ...fallbackPayload,
+                            requested_periode: filters.periode,
+                            used_map_period_fallback: true,
+                        };
+                    rawSites = fallbackSites;
+                }
             }
 
-            const rawSites = await response.json();
-            const sites = Array.isArray(rawSites)
-                ? rawSites.map(site => ({
+            const parseCoordinate = (value) => {
+                if (value === null || value === undefined || value === '') {
+                    return null;
+                }
+
+                const normalized = String(value).trim().replace(',', '.');
+                const parsed = Number(normalized);
+
+                return Number.isFinite(parsed) ? parsed : null;
+            };
+
+            const sites = rawSites.map(site => ({
                     ...site,
+                    latitude: parseCoordinate(site.latitude),
+                    longitude: parseCoordinate(site.longitude),
                     individus: site.individus === null || site.individus === undefined ? null : Number(site.individus),
                     menages: site.menages === null || site.menages === undefined ? null : Number(site.menages)
-                }))
-                : [];
+                }));
 
             if (requestId !== this.lastRequestId) {
                 return [];
             }
+
+            this.lastPayload = Array.isArray(payload)
+                ? { sites }
+                : { ...payload, sites };
 
             // Mettre à jour les marqueurs sur la carte
             this.updateMarkers(sites);
@@ -137,7 +265,14 @@ class DashboardMap {
         // Effacer tous les marqueurs existants
         this.markersLayer.clearLayers();
 
-        if (!sites || sites.length === 0) {
+        const displayableSites = (sites || []).filter((site) => {
+            return Number.isFinite(site.latitude)
+                && Number.isFinite(site.longitude)
+                && site.latitude !== 0
+                && site.longitude !== 0;
+        });
+
+        if (!displayableSites.length) {
             console.log('Aucun site avec coordonnées GPS trouvé');
             // Recentrer sur le Nord-Kivu si aucun site
             this.map.setView(this.defaultCenter, this.defaultZoom);
@@ -147,17 +282,15 @@ class DashboardMap {
         // Créer des marqueurs pour chaque site
         const bounds = [];
         
-        sites.forEach(site => {
-            if (site.latitude && site.longitude) {
-                const marker = this.createMarker(site);
-                marker.addTo(this.markersLayer);
-                bounds.push([site.latitude, site.longitude]);
-            }
+        displayableSites.forEach(site => {
+            const marker = this.createMarker(site);
+            marker.addTo(this.markersLayer);
+            bounds.push([site.latitude, site.longitude]);
         });
 
         // Ajuster la vue de la carte pour inclure tous les marqueurs
         if (bounds.length > 0) {
-            this.fitBoundsWithIntelligentZoom(bounds, sites.length);
+            this.fitBoundsWithIntelligentZoom(bounds, displayableSites.length);
         }
     }
 
@@ -294,18 +427,8 @@ class DashboardMap {
      * Retourne l'icône appropriée pour un site
      */
     getIconForSite(site) {
-        // Couleur basée sur la population
-        let color = '#3B82F6'; // Bleu par défaut
-
-        if (site.individus) {
-            if (site.individus > 10000) {
-                color = '#DC2626'; // Rouge pour les grands sites
-            } else if (site.individus > 5000) {
-                color = '#F59E0B'; // Orange pour les sites moyens
-            } else if (site.individus > 1000) {
-                color = '#10B981'; // Vert pour les petits sites
-            }
-        }
+        const typeLabel = this.getSiteTypeLabel(site);
+        const color = this.getTypeColor(typeLabel);
 
         return L.divIcon({
             className: 'custom-marker',
@@ -338,6 +461,19 @@ class DashboardMap {
      */
     resetView() {
         this.map.setView(this.defaultCenter, this.defaultZoom);
+    }
+
+    getLastPayload() {
+        return this.lastPayload;
+    }
+
+    getTypeLegend(sites = null) {
+        if (Array.isArray(sites)) {
+            return this.buildTypeLegend(sites);
+        }
+
+        const payloadSites = this.lastPayload?.sites;
+        return this.buildTypeLegend(Array.isArray(payloadSites) ? payloadSites : []);
     }
 
     /**
