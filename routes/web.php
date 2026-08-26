@@ -57,6 +57,7 @@ Route::get('/aide', function () {
 })->name('help.manual');
 
 // Dashboard public (accessible sans authentification)
+Route::get('/tableau-de-bord', [DashboardController::class, 'index'])->name('dashboard.public');
 Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 Route::match(['GET', 'POST'], '/dashboard/export/excel', [DashboardController::class, 'exportExcel'])->name('dashboard.export.excel');
 Route::match(['GET', 'POST'], '/dashboard/export/word', [DashboardController::class, 'exportWord'])->name('dashboard.export.word');

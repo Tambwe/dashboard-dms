@@ -27,4 +27,13 @@ class ExampleTest extends TestCase
             ->assertStatus(200)
             ->assertViewIs('dashboard');
     }
+
+    public function test_dashboard_is_available_through_the_public_uncached_route(): void
+    {
+        $response = $this->get('/tableau-de-bord');
+
+        $response
+            ->assertStatus(200)
+            ->assertViewIs('dashboard');
+    }
 }
