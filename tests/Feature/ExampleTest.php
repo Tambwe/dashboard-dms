@@ -14,6 +14,17 @@ class ExampleTest extends TestCase
     {
         $response = $this->get('/');
 
-        $response->assertStatus(200);
+        $response
+            ->assertStatus(200)
+            ->assertViewIs('welcome');
+    }
+
+    public function test_dashboard_remains_available_on_its_own_route(): void
+    {
+        $response = $this->get('/dashboard');
+
+        $response
+            ->assertStatus(200)
+            ->assertViewIs('dashboard');
     }
 }

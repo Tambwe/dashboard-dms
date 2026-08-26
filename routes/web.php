@@ -24,7 +24,9 @@ use App\Http\Controllers\Admin\ProgramIndicatorController;
 use App\Http\Controllers\Admin\ProgramActivityController;
 use App\Http\Controllers\Admin\ProgramSubActivityController;
 use App\Http\Controllers\Admin\MobileQuestionnaireController as AdminMobileQuestionnaireController;
+use App\Http\Controllers\Admin\MobileNotificationController;
 use App\Http\Controllers\MobileCollectionController;
+use App\Http\Controllers\MobileAppDownloadController;
 use App\Http\Controllers\Api\MobileQuestionnaireController as ApiMobileQuestionnaireController;
 
 /*
@@ -38,13 +40,11 @@ use App\Http\Controllers\Api\MobileQuestionnaireController as ApiMobileQuestionn
 |
 */
 
-// Page d'accueil publique
-Route::get('/', function () {
-    return view('welcome');
-})->name('home');
+// Page d'accueil publique avec présentation des fonctionnalités du système
+Route::view('/', 'welcome')->name('home');
 
-// Compatibilité ancienne URL /home
-Route::redirect('/home', '/dashboard', 302);
+// Compatibilité avec l'ancienne URL d'accueil
+Route::redirect('/home', '/', 301);
 
 // Page À propos (welcome)
 Route::get('/about', function () {
@@ -64,6 +64,9 @@ Route::match(['GET', 'POST'], '/dashboard/export/word', [DashboardController::cl
 // Profil public des sites OSSAT (sans authentification)
 Route::get('/profil-site', [PublicSiteController::class, 'index'])->name('public.site.index');
 Route::get('/profil-site/{site}', [PublicSiteController::class, 'show'])->name('public.site.show');
+Route::post('/profil-site/{site}/questions', [PublicSiteController::class, 'updateQuestionPreferences'])
+    ->middleware('auth')
+    ->name('public.site.questions.update');
 Route::get('/cartographie', [PublicSiteController::class, 'cartographie'])->name('public.cartographie');
 Route::get('/cartographie-mapbox', [PublicSiteController::class, 'cartographieMapbox'])->name('public.cartographie.mapbox');
 
@@ -185,16 +188,21 @@ Route::middleware('guest')->group(function () {
 
 Route::post('/logout', [LoginController::class, 'logout'])->middleware('auth')->name('logout');
 
+// Téléchargement public de l'application mobile Android.
+Route::get('/application-mobile/android', MobileAppDownloadController::class)->name('mobile.apk.download');
+
 // API mobile native pour collecte Android/iOS sans authentification web.
 // Les applications mobiles n’envoient pas le cookie CSRF de Laravel, donc il faut les exclure explicitement.
 Route::withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class])->group(function () {
     Route::post('/api/mobile/login', [\App\Http\Controllers\MobileCollectionController::class, 'loginNative'])->name('mobile.native.login');
-    Route::post('/api/mobile/photo-upload', [\App\Http\Controllers\MobileCollectionController::class, 'uploadNativePhoto'])->name('mobile.native.photo-upload');
-    Route::post('/api/mobile/save', [\App\Http\Controllers\MobileCollectionController::class, 'saveNative'])->name('mobile.native.save');
-    Route::post('/api/mobile/ossat/save', [\App\Http\Controllers\MobileCollectionController::class, 'saveOssatNative'])->name('mobile.native.ossat.save');
-    Route::post('/api/mobile/sync', [\App\Http\Controllers\MobileCollectionController::class, 'syncNative'])->name('mobile.native.sync');
-    Route::get('/api/mobile/questionnaires/active', [ApiMobileQuestionnaireController::class, 'active'])->name('mobile.native.questionnaires.active');
-    Route::post('/api/mobile/questionnaire/submit', [ApiMobileQuestionnaireController::class, 'submit'])->name('mobile.native.questionnaire.submit');
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/api/mobile/photo-upload', [\App\Http\Controllers\MobileCollectionController::class, 'uploadNativePhoto'])->name('mobile.native.photo-upload');
+        Route::post('/api/mobile/save', [\App\Http\Controllers\MobileCollectionController::class, 'saveNative'])->name('mobile.native.save');
+        Route::post('/api/mobile/ossat/save', [\App\Http\Controllers\MobileCollectionController::class, 'saveOssatNative'])->name('mobile.native.ossat.save');
+        Route::post('/api/mobile/sync', [\App\Http\Controllers\MobileCollectionController::class, 'syncNative'])->name('mobile.native.sync');
+        Route::get('/api/mobile/questionnaires/active', [ApiMobileQuestionnaireController::class, 'active'])->name('mobile.native.questionnaires.active');
+        Route::post('/api/mobile/questionnaire/submit', [ApiMobileQuestionnaireController::class, 'submit'])->name('mobile.native.questionnaire.submit');
+    });
 });
 
 // Routes de changement de mot de passe (accessible uniquement aux utilisateurs authentifiés)
@@ -220,6 +228,11 @@ Route::middleware(['auth'])->group(function () {
 
 // Routes d'administration - Accessible par super admin et admin organisation
 Route::middleware(['auth', 'check.role:super_admin,admin_organisation'])->prefix('admin')->name('admin.')->group(function () {
+    Route::get('mobile-notifications', [MobileNotificationController::class, 'index'])
+        ->name('mobile-notifications.index');
+    Route::post('mobile-notifications', [MobileNotificationController::class, 'send'])
+        ->name('mobile-notifications.send');
+
     // Gestion des utilisateurs
     Route::resource('users', UserController::class);
     
