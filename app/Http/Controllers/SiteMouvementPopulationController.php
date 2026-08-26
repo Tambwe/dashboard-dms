@@ -6,6 +6,7 @@ use App\Models\Site;
 use App\Models\SiteMouvementPopulation;
 use App\Models\CategorieMouvement;
 use App\Models\RaisonMouvement;
+use App\Services\MovementValidationNotificationService;
 use App\Services\SitePopulationService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -22,6 +23,11 @@ use PhpOffice\PhpSpreadsheet\NamedRange;
 
 class SiteMouvementPopulationController extends Controller
 {
+    public function __construct(
+        private MovementValidationNotificationService $movementNotifications
+    ) {
+    }
+
     /**
      * Récupère l'historique des mouvements d'un site
      */
@@ -374,6 +380,8 @@ class SiteMouvementPopulationController extends Controller
             $site->update(['date_mise_a_jour' => $mouvement->date_mouvement]);
             
             DB::commit();
+
+            $this->movementNotifications->notify($mouvement, (int) $user->id);
             
             if ($request->expectsJson()) {
                 return response()->json([
@@ -438,6 +446,8 @@ class SiteMouvementPopulationController extends Controller
                 'validated_by' => $user->id,
                 'rejection_reason' => $validated['rejection_reason'],
             ]);
+
+            $this->movementNotifications->notify($mouvement, (int) $user->id);
             
             if ($request->expectsJson()) {
                 return response()->json([

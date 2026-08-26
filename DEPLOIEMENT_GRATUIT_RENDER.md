@@ -71,3 +71,15 @@ php artisan view:cache
 2. Verifier le dashboard principal.
 3. Tester les filtres et pages critiques.
 4. Verifier les logs Render en cas d'erreur 500.
+
+## 8) Notifications de l'application mobile
+
+Les notifications utilisent Expo Push Notifications.
+
+1. Connecter `mobile-app` a un projet EAS avec `npx eas init`.
+2. Verifier que `extra.eas.projectId` a ete ajoute dans la configuration Expo.
+3. Configurer les identifiants Firebase Cloud Messaging du projet Android dans Expo/EAS.
+4. Reconstruire et reinstaller l'application avec une development build ou une build EAS.
+5. Se reconnecter dans l'application afin d'enregistrer l'appareil et son jeton.
+
+Les notifications push distantes ne fonctionnent pas dans Expo Go sur Android. Un appareil physique et une build native sont requis.

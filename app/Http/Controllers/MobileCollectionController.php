@@ -14,6 +14,8 @@ use App\Models\Site;
 use App\Models\SiteGeography;
 use App\Models\Territoire;
 use App\Models\User;
+use App\Services\MobileSiteAccessService;
+use App\Services\GeoJsonService;
 use App\Services\SitePopulationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
@@ -33,6 +35,14 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MobileCollectionController extends Controller
 {
+    private const MAX_GEOGRAPHY_ACCURACY_METERS = 15;
+
+    public function __construct(
+        private readonly MobileSiteAccessService $mobileSiteAccess,
+        private readonly GeoJsonService $geoJsonService
+    ) {
+    }
+
     protected array $sectorMap = [
         'wash' => [
             'wash_disponible',
@@ -884,23 +894,9 @@ class MobileCollectionController extends Controller
         ]);
     }
 
-    protected function resolveNativeUserId(?Request $request = null): int
+    protected function resolveNativeUser(Request $request): User
     {
-        $requestedUserId = $request?->input('user_id') ?? Auth::id();
-
-        if ($requestedUserId && User::query()->whereKey($requestedUserId)->exists()) {
-            return (int) $requestedUserId;
-        }
-
-        $fallbackUserId = User::query()->value('id');
-
-        if ($fallbackUserId) {
-            return (int) $fallbackUserId;
-        }
-
-        $user = User::factory()->create();
-
-        return (int) $user->id;
+        return $request->user();
     }
 
     public function loginNative(Request $request): JsonResponse
@@ -908,6 +904,7 @@ class MobileCollectionController extends Controller
         $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
+            'device_uuid' => ['nullable', 'uuid'],
         ]);
 
         if (!Auth::attempt($request->only('email', 'password'), true)) {
@@ -918,9 +915,16 @@ class MobileCollectionController extends Controller
         }
 
         $user = Auth::user();
+        $tokenName = 'mobile-device:' . ($request->input('device_uuid') ?: Str::uuid()->toString());
+        $user->tokens()->where('name', $tokenName)->delete();
+        $apiToken = $user->createToken($tokenName, [
+            'mobile-device:register',
+            'mobile-collection',
+        ])->plainTextToken;
 
         return response()->json([
             'success' => true,
+            'api_token' => $apiToken,
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
@@ -954,14 +958,15 @@ class MobileCollectionController extends Controller
             'payload' => ['required', 'array'],
         ]);
 
-        $userId = $this->resolveNativeUserId($request);
+        $user = $this->resolveNativeUser($request);
         $payload = $request->input('payload');
         $siteId = $this->resolveSubmissionSiteId(
             $request->input('site_id'),
-            is_array($payload) ? $payload : []
+            is_array($payload) ? $payload : [],
+            $user
         );
         $submission = MobileCollectionSubmission::create([
-            'user_id' => $userId,
+            'user_id' => $user->id,
             'site_id' => $siteId,
             'type' => $request->input('type'),
             'sector' => $request->input('sector'),
@@ -985,7 +990,10 @@ class MobileCollectionController extends Controller
             'payload' => ['required', 'array'],
         ]);
 
-        $userId = $this->resolveNativeUserId($request);
+        $user = $this->resolveNativeUser($request);
+        $site = Site::query()->findOrFail((int) $request->input('site_id'));
+        $this->mobileSiteAccess->assertCanCollect($user, $site);
+        $userId = $user->id;
         $payload = $request->input('payload');
         $payload['site_id'] = $request->input('site_id');
         $payload['created_by'] = $userId;
@@ -1028,7 +1036,8 @@ class MobileCollectionController extends Controller
 
     public function sync(Request $request): JsonResponse
     {
-        $userId = $request->input('user_id', Auth::id());
+        $user = $request->user();
+        $userId = $user->id;
         $records = $request->input('records', []);
 
         if (!is_array($records) || empty($records)) {
@@ -1065,7 +1074,7 @@ class MobileCollectionController extends Controller
                 }
                 $submission = MobileCollectionSubmission::create([
                     'user_id' => Auth::id(),
-                    'site_id' => $this->resolveSubmissionSiteId($record['site_id'], $recordPayload),
+                    'site_id' => $this->resolveSubmissionSiteId($record['site_id'], $recordPayload, $user),
                     'type' => $record['type'] ?? 'sector',
                     'sector' => $record['sector'] ?? null,
                     'payload' => $recordPayload,
@@ -1082,7 +1091,7 @@ class MobileCollectionController extends Controller
             }
 
             if (is_array($record) && isset($record['site_id'])) {
-                $this->refreshSubmissionFromSyncRecord($submission, $record, $payload, $mobileRecordId);
+                $this->refreshSubmissionFromSyncRecord($submission, $record, $payload, $mobileRecordId, $user);
             }
 
             try {
@@ -1110,7 +1119,8 @@ class MobileCollectionController extends Controller
 
     public function syncNative(Request $request): JsonResponse
     {
-        $userId = $this->resolveNativeUserId($request);
+        $user = $this->resolveNativeUser($request);
+        $userId = $user->id;
         $records = $request->input('records', []);
 
         if (!is_array($records) || empty($records)) {
@@ -1148,7 +1158,7 @@ class MobileCollectionController extends Controller
                 }
                 $submission = MobileCollectionSubmission::create([
                     'user_id' => $userId,
-                    'site_id' => $this->resolveSubmissionSiteId($record['site_id'], $recordPayload),
+                    'site_id' => $this->resolveSubmissionSiteId($record['site_id'], $recordPayload, $user),
                     'type' => $record['type'] ?? 'sector',
                     'sector' => $record['sector'] ?? null,
                     'payload' => $recordPayload,
@@ -1165,7 +1175,7 @@ class MobileCollectionController extends Controller
             }
 
             if (is_array($record) && isset($record['site_id'])) {
-                $this->refreshSubmissionFromSyncRecord($submission, $record, $payload, $mobileRecordId);
+                $this->refreshSubmissionFromSyncRecord($submission, $record, $payload, $mobileRecordId, $user);
             }
 
             try {
@@ -1230,14 +1240,15 @@ class MobileCollectionController extends Controller
         MobileCollectionSubmission $submission,
         array $record,
         mixed $payload,
-        string $mobileRecordId
+        string $mobileRecordId,
+        User $user
     ): void {
         $recordPayload = is_array($payload) ? $payload : [];
         if ($mobileRecordId !== '') {
             $recordPayload['mobile_record_id'] = $mobileRecordId;
         }
 
-        $submission->site_id = $this->resolveSubmissionSiteId($record['site_id'], $recordPayload);
+        $submission->site_id = $this->resolveSubmissionSiteId($record['site_id'], $recordPayload, $user);
         $submission->type = $record['type'] ?? $submission->type;
         $submission->sector = $record['sector'] ?? null;
         $submission->payload = $recordPayload;
@@ -1247,61 +1258,24 @@ class MobileCollectionController extends Controller
         $submission->save();
     }
 
-    protected function resolveOrCreateSiteId(array $payload, ?int $fallbackSiteId = null): int
+    protected function resolveOrCreateSiteId(array $payload, ?int $fallbackSiteId, User $user): int
     {
         $siteId = (int) ($fallbackSiteId ?? ($payload['site_id'] ?? 0));
         if ($siteId > 0) {
-            if (Site::query()->whereKey($siteId)->exists()) {
-                return $siteId;
-            }
+            $site = Site::query()->findOrFail($siteId);
+            $this->mobileSiteAccess->assertCanCollect($user, $site);
 
-            $generatedCode = 'MOB-REF-'.$siteId;
-            $existingGenerated = Site::query()->where('code_site', $generatedCode)->first();
-            if ($existingGenerated) {
-                return (int) $existingGenerated->id;
-            }
-
-            return (int) $this->createSiteFromPayload([
-                'nom' => 'Site mobile référence '.$siteId,
-                'code_site' => $generatedCode,
-                'commune_id' => $payload['commune_id'] ?? null,
-                'province' => $payload['province'] ?? null,
-                'territoire' => $payload['territoire'] ?? null,
-                'zone_sante' => $payload['zone_sante'] ?? null,
-                'latitude' => $payload['latitude'] ?? null,
-                'longitude' => $payload['longitude'] ?? null,
-                'source' => 'mobile_reference_repair',
-                'type_gestion' => $payload['type_gestion'] ?? null,
-            ], $payload)->id;
+            return $siteId;
         }
 
         if (!empty($payload['is_new_site']) && is_array($payload['new_site'] ?? null)) {
-            return (int) $this->createSiteFromPayload($payload['new_site'], $payload)->id;
-        }
-
-        $latitude = $this->nullableFloat($payload['latitude'] ?? null);
-        $longitude = $this->nullableFloat($payload['longitude'] ?? null);
-        if ($latitude !== null && $longitude !== null) {
-            $autoCode = 'MOB-AUTO-'.substr(md5($latitude.'|'.$longitude), 0, 12);
-            $existingAutoSite = Site::query()->where('code_site', $autoCode)->first();
-            if ($existingAutoSite) {
-                return (int) $existingAutoSite->id;
-            }
-
-            return (int) $this->createSiteFromPayload([
-                'nom' => 'Site mobile auto '.now()->format('YmdHis'),
-                'code_site' => $autoCode,
-                'latitude' => $latitude,
-                'longitude' => $longitude,
-                'source' => 'mobile_auto',
-                'type_gestion' => 'mobile',
-            ], $payload)->id;
+            return (int) $this->createSiteFromPayload($payload['new_site'], $payload, $user)->id;
         }
 
         throw new \RuntimeException('Identifiant du site requis pour la synchronisation.');
     }
 
-    protected function resolveSubmissionSiteId(mixed $siteId, array $payload): ?int
+    protected function resolveSubmissionSiteId(mixed $siteId, array $payload, User $user): ?int
     {
         $isNewSite = filter_var($payload['is_new_site'] ?? false, FILTER_VALIDATE_BOOLEAN)
             || (isset($payload['new_site']) && is_array($payload['new_site']));
@@ -1311,7 +1285,9 @@ class MobileCollectionController extends Controller
 
         if (is_numeric($siteId)) {
             $normalized = (int) $siteId;
-            if ($normalized > 0 && Site::query()->whereKey($normalized)->exists()) {
+            $site = $normalized > 0 ? Site::query()->find($normalized) : null;
+            if ($site) {
+                $this->mobileSiteAccess->assertCanCollect($user, $site);
                 return $normalized;
             }
             return null;
@@ -1319,7 +1295,9 @@ class MobileCollectionController extends Controller
 
         if (is_numeric($payload['site_id'] ?? null)) {
             $normalized = (int) $payload['site_id'];
-            if ($normalized > 0 && Site::query()->whereKey($normalized)->exists()) {
+            $site = $normalized > 0 ? Site::query()->find($normalized) : null;
+            if ($site) {
+                $this->mobileSiteAccess->assertCanCollect($user, $site);
                 return $normalized;
             }
             return null;
@@ -1328,9 +1306,9 @@ class MobileCollectionController extends Controller
         return null;
     }
 
-    protected function createSiteFromPayload(array $newSite, array $payload = []): Site
+    protected function createSiteFromPayload(array $newSite, array $payload, User $user): Site
     {
-        return Site::query()->create([
+        return $this->mobileSiteAccess->createSiteForCollector($user, [
             'nom' => trim((string) ($newSite['nom'] ?? '')) !== ''
                 ? trim((string) ($newSite['nom'] ?? ''))
                 : 'Site mobile '.now()->format('YmdHis'),
@@ -1348,15 +1326,15 @@ class MobileCollectionController extends Controller
             'code_zone_sante' => $this->nullableString($newSite['code_zone_sante'] ?? null),
             'aire_sante' => $this->nullableString($newSite['aire_sante'] ?? null),
             'code_aire_sante' => $this->nullableString($newSite['code_aire_sante'] ?? null),
-            'latitude' => $this->nullableFloat($newSite['latitude'] ?? null),
-            'longitude' => $this->nullableFloat($newSite['longitude'] ?? null),
+            'latitude' => $this->nullableFloat($newSite['latitude'] ?? $payload['latitude'] ?? null),
+            'longitude' => $this->nullableFloat($newSite['longitude'] ?? $payload['longitude'] ?? null),
             'source' => $this->nullableString($newSite['source'] ?? 'mobile'),
             'round' => $this->nullableString($newSite['round'] ?? null),
             'type_gestion' => $this->nullableString($newSite['type_gestion'] ?? null),
             'date_mise_a_jour' => $this->nullableString($newSite['date_mise_a_jour'] ?? now()->toDateString()),
             'type_fichier' => $this->nullableString($newSite['type_fichier'] ?? null),
-            'geometry_type' => $this->nullableString($newSite['geometry_type'] ?? 'point'),
-            'collection_accuracy_m' => $this->nullableFloat($newSite['collection_accuracy_m'] ?? null),
+            'geometry_type' => $this->nullableString($newSite['geometry_type'] ?? $payload['geometry_type'] ?? 'point'),
+            'collection_accuracy_m' => $this->nullableFloat($newSite['collection_accuracy_m'] ?? $payload['accuracy_meters'] ?? null),
             'geometry_collected_at' => now(),
             'date_fermeture' => $this->nullableString($newSite['date_fermeture'] ?? null),
             'raison_fermeture' => $this->nullableString($newSite['raison_fermeture'] ?? null),
@@ -1495,14 +1473,28 @@ class MobileCollectionController extends Controller
     protected function applySubmission(MobileCollectionSubmission $submission): void
     {
         $payload = $submission->payload ?? [];
-        $siteId = $this->resolveOrCreateSiteId($payload, $submission->site_id);
+        $user = User::query()->findOrFail($submission->user_id);
+        $newSitePopulation = null;
+        if (($submission->type ?? 'sector') === 'geography') {
+            $this->assertAcceptableGeographyAccuracy($payload['accuracy_meters'] ?? null);
+            if (
+                filter_var($payload['is_new_site'] ?? false, FILTER_VALIDATE_BOOLEAN)
+                && is_array($payload['new_site'] ?? null)
+            ) {
+                $newSitePopulation = $this->validateNewSitePopulation($payload['new_site']);
+            }
+        }
+
+        $siteId = $this->resolveOrCreateSiteId($payload, $submission->site_id, $user);
         if ((int) ($submission->site_id ?? 0) !== (int) $siteId) {
             $submission->site_id = $siteId;
         }
 
         if (($submission->type ?? 'sector') === 'geography') {
             $site = Site::findOrFail($siteId);
-            $geojson = is_array($payload['geojson'] ?? null) ? $payload['geojson'] : null;
+            $geojson = $this->geoJsonService->normalize(
+                is_array($payload['geojson'] ?? null) ? $payload['geojson'] : null
+            );
             $featureProperties = is_array($geojson['features'][0]['properties'] ?? null)
                 ? $geojson['features'][0]['properties']
                 : [];
@@ -1544,6 +1536,25 @@ class MobileCollectionController extends Controller
                 ],
             ]);
 
+            if ($newSitePopulation !== null) {
+                SiteMouvementPopulation::query()->firstOrCreate(
+                    [
+                        'site_id' => $site->id,
+                        'source' => 'mobile_geography',
+                        'round' => 'submission-'.$submission->id,
+                    ],
+                    [
+                        ...$newSitePopulation,
+                        'date_mouvement' => $payload['date_collecte'] ?? now()->toDateString(),
+                        'type_mouvement' => 'recensement',
+                        'periode' => $payload['periode_collecte'] ?? null,
+                        'raison' => 'Population initiale collectée lors de la création mobile du site.',
+                        'created_by' => $submission->user_id,
+                        'statut' => 'en_attente',
+                    ]
+                );
+            }
+
             // Garder les colonnes de synthèse du site pour compatibilité des écrans existants.
             $site->latitude = $latitude ?? $site->latitude;
             $site->longitude = $longitude ?? $site->longitude;
@@ -1563,6 +1574,7 @@ class MobileCollectionController extends Controller
             if (!isset($payload['date_collecte']) && isset($payload['date'])) {
                 $payload['date_collecte'] = $payload['date'];
             }
+
             OssatReport::create($payload);
             return;
         }
@@ -1706,6 +1718,69 @@ class MobileCollectionController extends Controller
         $profile->collecteur_id = $submission->user_id;
         $profile->statut = $payload['statut'] ?? 'soumis';
         $profile->notes_generales = $payload['notes_generales'] ?? $profile->notes_generales;
+        $groupKey = match ($sector) {
+            'protection' => 'gestion',
+            'abri' => 'abri_ame',
+            default => $sector,
+        };
+        $profile->groupes_collectes = array_values(array_unique([
+            ...$profile->collectedGroupKeys(),
+            $groupKey,
+        ]));
         $profile->save();
+    }
+
+    private function assertAcceptableGeographyAccuracy(mixed $accuracy): void
+    {
+        if (!is_numeric($accuracy) || (float) $accuracy > self::MAX_GEOGRAPHY_ACCURACY_METERS) {
+            throw new \RuntimeException(
+                'Précision GPS insuffisante : une mesure de 15 mètres ou moins est obligatoire.'
+            );
+        }
+    }
+
+    private function validateNewSitePopulation(array $newSite): array
+    {
+        $population = [];
+
+        foreach (SitePopulationService::FIELDS as $field) {
+            $value = $newSite[$field] ?? null;
+            if (
+                $value === null
+                || $value === ''
+                || filter_var($value, FILTER_VALIDATE_INT) === false
+                || (int) $value < 0
+            ) {
+                throw new \RuntimeException(
+                    'Population initiale invalide : tous les effectifs doivent être des entiers positifs ou nuls.'
+                );
+            }
+            $population[$field] = (int) $value;
+        }
+
+        if ($population['menages'] <= 0 || $population['individus'] <= 0) {
+            throw new \RuntimeException(
+                'Population initiale invalide : les ménages et les individus doivent être supérieurs à zéro.'
+            );
+        }
+
+        $demographicTotal = collect([
+            'f_0_5',
+            'f_6_17',
+            'f_18_59',
+            'f_60_plus',
+            'h_0_5',
+            'h_6_17',
+            'h_18_59',
+            'h_60_plus',
+        ])->sum(fn (string $field): int => $population[$field]);
+
+        if ($demographicTotal !== $population['individus']) {
+            throw new \RuntimeException(
+                'Population initiale incohérente : la somme des groupes d’âge et de sexe doit correspondre aux individus.'
+            );
+        }
+
+        return $population;
     }
 }

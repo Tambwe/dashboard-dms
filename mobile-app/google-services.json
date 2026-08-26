@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "700255235442",
+    "project_id": "dms-mobile-collector",
+    "storage_bucket": "dms-mobile-collector.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:700255235442:android:e0719711cc8fd5c10bc1eb",
+        "android_client_info": {
+          "package_name": "com.dms.mobilecollector"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtTFwIIiemPcAWbz0gpTWC9kvmHTXrrX4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -68,6 +68,7 @@ class ServiceProfile extends Model
         // Métadonnées
         'statut',
         'notes_generales',
+        'groupes_collectes',
     ];
 
     protected $casts = [
@@ -90,7 +91,89 @@ class ServiceProfile extends Model
         'abri_types' => 'array',
         'abri_ame_distribues' => 'array',
         'gestion_partenaires' => 'array',
+        'groupes_collectes' => 'array',
     ];
+
+    public const GROUP_FIELDS = [
+        'sante' => [
+            'sante_structures_fonctionnelles',
+            'sante_personnel_medical',
+            'sante_services_offerts',
+            'sante_consultations_mois',
+            'sante_observations',
+        ],
+        'education' => [
+            'education_ecoles_fonctionnelles',
+            'education_enseignants',
+            'education_eleves_inscrits',
+            'education_salles_classe',
+            'education_niveaux_offerts',
+            'education_observations',
+        ],
+        'wash' => [
+            'wash_points_eau',
+            'wash_litres_par_personne',
+            'wash_latrines',
+            'wash_douches',
+            'wash_gestion_dechets',
+            'wash_observations',
+        ],
+        'environnement' => [
+            'environnement_gestion_dechets',
+            'environnement_drainage',
+            'environnement_espaces_verts',
+            'environnement_risques',
+            'environnement_observations',
+        ],
+        'abri_ame' => [
+            'abri_logements_fonctionnels',
+            'abri_types',
+            'abri_menages_ame',
+            'abri_ame_distribues',
+            'abri_observations',
+        ],
+        'gestion' => [
+            'gestion_comite_site',
+            'gestion_membres_comite',
+            'gestion_mecanisme_plainte',
+            'gestion_reunions_mois',
+            'gestion_partenaires',
+            'gestion_observations',
+        ],
+    ];
+
+    public static function groupKeys(): array
+    {
+        return array_keys(self::GROUP_FIELDS);
+    }
+
+    public function hasCollectedGroup(string $group): bool
+    {
+        if (is_array($this->groupes_collectes)) {
+            return in_array($group, $this->groupes_collectes, true);
+        }
+
+        foreach (self::GROUP_FIELDS[$group] ?? [] as $field) {
+            $value = $this->{$field};
+            if ($value === true || (! is_bool($value) && $value !== null && $value !== '' && $value !== [])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function collectedGroupKeys(): array
+    {
+        if (is_array($this->groupes_collectes)) {
+            return $this->groupes_collectes;
+        }
+
+        return array_values(array_filter(
+            self::groupKeys(),
+            fn (string $group): bool => $this->hasCollectedGroup($group)
+        ));
+    }
 
     /**
      * Relation avec le site

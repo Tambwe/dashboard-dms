@@ -118,6 +118,7 @@ class ServiceProfileController extends Controller
 
         $validated['collecteur_id'] = Auth::id();
         $validated['statut'] = 'brouillon';
+        $validated['groupes_collectes'] = ServiceProfile::groupKeys();
 
         $profile = ServiceProfile::create($validated);
 
@@ -223,6 +224,7 @@ class ServiceProfileController extends Controller
             // Métadonnées
             'notes_generales' => 'nullable|string',
         ]);
+        $validated['groupes_collectes'] = ServiceProfile::groupKeys();
 
         $serviceProfile->update($validated);
 

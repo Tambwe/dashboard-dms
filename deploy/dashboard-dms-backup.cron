@@ -1,0 +1,1 @@
+17 2 * * * root /opt/dashboard-dms/deploy/backup-database.sh >> /var/log/dashboard-dms-backup.log 2>&1

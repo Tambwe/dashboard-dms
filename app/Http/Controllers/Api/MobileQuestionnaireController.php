@@ -11,15 +11,20 @@ use App\Models\RaisonMouvement;
 use App\Models\Site;
 use App\Models\Territoire;
 use App\Models\User;
+use App\Services\MobileSiteAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
 
 class MobileQuestionnaireController extends Controller
 {
+    public function __construct(private readonly MobileSiteAccessService $mobileSiteAccess)
+    {
+    }
+
     public function active(Request $request): JsonResponse
     {
+        $user = $request->user();
         $code = (string) $request->input('code', 'service-cartography');
 
         $questionnaire = MobileQuestionnaire::query()
@@ -44,14 +49,14 @@ class MobileQuestionnaireController extends Controller
                 'description' => $questionnaire->description,
                 'version' => $questionnaire->version,
                 'survey' => $questionnaire->survey ?? [],
-                'choices' => $this->mergeChoicesWithReferences($questionnaire->choices ?? []),
+                'choices' => $this->mergeChoicesWithReferences($questionnaire->choices ?? [], $user),
                 'settings' => $questionnaire->settings ?? [],
             ],
             'references' => [
                 'provinces' => Province::query()->select('id', 'name')->orderBy('name')->get(),
                 'territoires' => Territoire::query()->select('id', 'name', 'province_id')->orderBy('name')->get(),
                 'communes' => Commune::query()->select('id', 'name', 'territoire_id', 'province_id')->orderBy('name')->get(),
-                'sites' => $this->getReferenceSites(),
+                'sites' => $this->getReferenceSites($user),
                 'movement_reasons' => RaisonMouvement::query()
                     ->with('categorieMouvement:id,name,code')
                     ->select('id', 'categorie_mouvement_id', 'name', 'code')
@@ -106,16 +111,17 @@ class MobileQuestionnaireController extends Controller
             ], 404);
         }
 
-        $userId = $this->resolveNativeUserId($request);
+        $user = $request->user();
 
         $siteId = $request->input('site_id');
         if ($request->boolean('is_new_site')) {
             $siteId = $this->createSiteFromMobilePayload(
                 (array) $request->input('new_site', []),
-                $request
+                $request,
+                $user
             )->id;
         } else {
-            $siteId = $this->resolveExistingSiteIdOrCreateReference($siteId, $request);
+            $siteId = $this->resolveExistingSiteId($siteId, $user);
         }
 
         if (empty($siteId)) {
@@ -127,7 +133,7 @@ class MobileQuestionnaireController extends Controller
 
         $submission = MobileQuestionnaireSubmission::query()->create([
             'questionnaire_id' => $questionnaire->id,
-            'user_id' => $userId,
+            'user_id' => $user->id,
             'province_id' => $request->input('province_id'),
             'territoire_id' => $request->input('territoire_id'),
             'commune_id' => $request->input('commune_id'),
@@ -146,27 +152,13 @@ class MobileQuestionnaireController extends Controller
         ]);
     }
 
-    private function resolveNativeUserId(Request $request): int
+    private function mergeChoicesWithReferences(array $choices, User $user): array
     {
-        $requestedUserId = $request->input('user_id') ?? Auth::id();
-
-        if ($requestedUserId && User::query()->whereKey($requestedUserId)->exists()) {
-            return (int) $requestedUserId;
-        }
-
-        $fallbackUserId = User::query()->value('id');
-
-        if ($fallbackUserId) {
-            return (int) $fallbackUserId;
-        }
-
-        $user = User::factory()->create();
-
-        return (int) $user->id;
-    }
-
-    private function mergeChoicesWithReferences(array $choices): array
-    {
+        $choices = array_values(array_filter(
+            $choices,
+            fn (mixed $choice): bool => ! is_array($choice)
+                || (string) ($choice['list_name'] ?? $choice['listName'] ?? '') !== 'camps_csv'
+        ));
         $referenceChoices = [];
 
         foreach (Province::query()->select('id', 'name')->orderBy('name')->get() as $province) {
@@ -209,7 +201,7 @@ class MobileQuestionnaireController extends Controller
             }
         }
 
-        foreach (Site::query()->select($siteSelectColumns)->orderBy('nom')->get() as $site) {
+        foreach ($this->mobileSiteAccess->accessibleSitesQuery($user)->select($siteSelectColumns)->orderBy('nom')->get() as $site) {
             $zsReference = '';
             if (Schema::hasColumn('sites', 'commune_id')) {
                 $zsReference = (string) ($site->commune_id ?? '');
@@ -230,7 +222,7 @@ class MobileQuestionnaireController extends Controller
         return array_values(array_merge($choices, $referenceChoices));
     }
 
-    private function getReferenceSites()
+    private function getReferenceSites(User $user)
     {
         $siteSelectColumns = ['id'];
         foreach ([
@@ -250,13 +242,13 @@ class MobileQuestionnaireController extends Controller
             }
         }
 
-        return Site::query()
+        return $this->mobileSiteAccess->accessibleSitesQuery($user)
             ->select($siteSelectColumns)
             ->orderBy('nom')
             ->get();
     }
 
-    private function createSiteFromMobilePayload(array $newSite, Request $request): Site
+    private function createSiteFromMobilePayload(array $newSite, Request $request, User $user): Site
     {
         $siteData = [
             'nom' => trim((string) ($newSite['nom'] ?? '')) !== ''
@@ -292,10 +284,10 @@ class MobileQuestionnaireController extends Controller
             'document_fermeture' => $this->nullableString($newSite['document_fermeture'] ?? null),
         ];
 
-        return Site::query()->create($siteData);
+        return $this->mobileSiteAccess->createSiteForCollector($user, $siteData);
     }
 
-    private function resolveExistingSiteIdOrCreateReference(mixed $siteId, Request $request): ?int
+    private function resolveExistingSiteId(mixed $siteId, User $user): ?int
     {
         if (!is_numeric($siteId)) {
             return null;
@@ -306,25 +298,14 @@ class MobileQuestionnaireController extends Controller
             return null;
         }
 
-        if (Site::query()->whereKey($normalizedSiteId)->exists()) {
-            return $normalizedSiteId;
+        $site = Site::query()->find($normalizedSiteId);
+        if (! $site) {
+            return null;
         }
 
-        $generatedCode = 'MOB-REF-'.$normalizedSiteId;
-        $existingGenerated = Site::query()->where('code_site', $generatedCode)->first();
-        if ($existingGenerated) {
-            return (int) $existingGenerated->id;
-        }
+        $this->mobileSiteAccess->assertCanCollect($user, $site);
 
-        $created = $this->createSiteFromMobilePayload([
-            'nom' => 'Site mobile référence '.$normalizedSiteId,
-            'code_site' => $generatedCode,
-            'commune_id' => $request->input('commune_id'),
-            'source' => 'mobile_reference_repair',
-            'type_gestion' => null,
-        ], $request);
-
-        return (int) $created->id;
+        return $normalizedSiteId;
     }
 
     private function nullableString(mixed $value): ?string

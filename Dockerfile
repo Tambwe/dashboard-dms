@@ -37,7 +37,8 @@ COPY . .
 COPY --from=composer_build /app/vendor ./vendor
 COPY --from=node_build /app/public/build ./public/build
 
-RUN chown -R www-data:www-data storage bootstrap/cache \
+RUN mkdir -p storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs \
+    && chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public

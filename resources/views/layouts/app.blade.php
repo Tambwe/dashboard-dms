@@ -37,7 +37,7 @@
             <div class="flex flex-col h-full">
                 <!-- Logo -->
                 <div class="flex items-center justify-between h-16 px-6 border-b border-gray-200 dark:border-gray-700">
-                    <a href="{{ route('dashboard') }}" class="flex items-center space-x-3" title="Accueil">
+                    <a href="{{ route('home') }}" class="flex items-center space-x-3" title="Accueil">
                         <img src="{{ asset('images/logo-dms-cccm.avif') }}" alt="Logo DMS CCCM" class="h-10 w-auto">
                         <div>
                             <h1 class="text-lg font-bold text-gray-900 dark:text-white">DMS CCCM</h1>

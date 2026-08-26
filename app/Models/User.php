@@ -59,6 +59,11 @@ class User extends Authenticatable
         return $this->belongsTo(Organisation::class);
     }
 
+    public function mobileDevices()
+    {
+        return $this->hasMany(MobileDevice::class);
+    }
+
     /**
      * Get the sites that the user has access to (for data collection).
      */

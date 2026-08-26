@@ -137,6 +137,8 @@
         /* ── Popups ───────────────────────────────────────────────── */
         .leaflet-popup-content-wrapper{border-radius:10px!important;padding:0!important;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.15)!important}
         .leaflet-popup-content{margin:0!important}
+        .category-map-marker{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border:2px solid #0369a1;border-radius:50% 50% 50% 0;background:#fff;box-shadow:0 2px 7px rgba(15,23,42,.35);font-size:19px;transform:rotate(-45deg)}
+        .category-map-marker span{transform:rotate(45deg)}
         .popup-inner{padding:12px 14px;min-width:210px}
         .popup-title{font-weight:700;font-size:0.88rem;color:#0f172a;margin-bottom:4px;line-height:1.3}
         .popup-geo{font-size:0.72rem;color:#64748b;margin-bottom:4px}
@@ -188,16 +190,15 @@
 
 {{-- NAVBAR --}}
 <header id="carto-navbar">
-    <a href="{{ url('/dashboard') }}" style="display:flex;align-items:center;gap:10px;text-decoration:none">
+    <a href="{{ route('home') }}" style="display:flex;align-items:center;gap:10px;text-decoration:none">
         <img src="{{ asset('images/logo-dms-cccm.avif') }}" alt="Logo" style="height:32px;width:auto">
         <span style="font-weight:700;font-size:1rem;color:#0f172a" class="dark:text-white">DMS CCCM</span>
     </a>
     <nav style="display:flex;align-items:center;gap:1.25rem">
-        <a href="{{ url('/dashboard') }}"            style="font-size:0.8rem;color:#64748b;text-decoration:none;font-weight:500" class="hidden md:block">Accueil</a>
+        <a href="{{ route('home') }}"            style="font-size:0.8rem;color:#64748b;text-decoration:none;font-weight:500" class="hidden md:block">Accueil</a>
         <a href="{{ url('/about') }}"                     style="font-size:0.8rem;color:#64748b;text-decoration:none;font-weight:500" class="hidden md:block">A propos</a>
         <a href="{{ url('/profil-site') }}"  style="font-size:0.8rem;color:#64748b;text-decoration:none;font-weight:500" class="hidden md:block">Profil des sites</a>
         <a href="{{ url('/cartographie') }}" style="font-size:0.8rem;color:#2563eb;text-decoration:none;font-weight:600;border-bottom:2px solid #2563eb;padding-bottom:1px" class="hidden md:block">Cartographie</a>
-        <a href="{{ url('/cartographie-mapbox') }}" style="font-size:0.8rem;color:#64748b;text-decoration:none;font-weight:500" class="hidden md:block">Cartographie Mapbox</a>
         <select id="print-format" title="Format impression" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:0.72rem;font-weight:600">
             <option value="A1 landscape">A1 paysage</option>
             <option value="A1 portrait">A1 portrait</option>
@@ -690,6 +691,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     return {
                         index: index,
                         name: label,
+                        point_category: layerItem.point_category || null,
                         geojson: layerGeojson
                     };
                 })
@@ -701,6 +703,22 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         return [];
+    }
+
+    function pointCategoryIcon(category) {
+        return {
+            robinet: '\uD83D\uDEB0',
+            douche: '\uD83D\uDEBF',
+            toilette: '\uD83D\uDEBB',
+            abris: '\uD83C\uDFE0',
+            point_eau: '\uD83D\uDCA7',
+            centre_sante: '\u2695\uFE0F',
+            ecole: '\uD83C\uDFEB',
+            universite: '\uD83C\uDF93',
+            marche: '\uD83D\uDED2',
+            hopital: '\uD83C\uDFE5',
+            lavage_main: '\uD83E\uDDFC'
+        }[category] || '\uD83D\uDCCD';
     }
 
     function buildThematicLayer(site, layerMeta, styleIndex, popupHtml) {
@@ -716,13 +734,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 };
             },
             pointToLayer: function(feature, latlng) {
-                return L.circleMarker(latlng, {
-                    radius: 7,
-                    fillColor: color,
-                    color: '#1f2937',
-                    weight: 1.5,
-                    opacity: 1,
-                    fillOpacity: 0.75
+                return L.marker(latlng, {
+                    icon: L.divIcon({
+                        className: '',
+                        html: '<div class="category-map-marker"><span>' + pointCategoryIcon(layerMeta.point_category) + '</span></div>',
+                        iconSize: [34, 34],
+                        iconAnchor: [17, 34],
+                        popupAnchor: [0, -34]
+                    })
                 });
             },
             onEachFeature: function(feature, layer) {
@@ -806,6 +825,47 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         return deferredLayer.pendingPromise;
+    }
+
+    function showSiteThematicLayers(site, popupHtml, siteLayers) {
+        resetThematicControl();
+
+        (Array.isArray(siteLayers) ? siteLayers : []).forEach(function(layerMeta, index) {
+            var layerGroup = L.layerGroup();
+            var labelBase = site.nom + ' - ' + layerMeta.name;
+            var controlLabel = labelBase;
+            var duplicateIndex = 2;
+
+            while (Object.prototype.hasOwnProperty.call(thematicOverlayMaps, controlLabel)) {
+                controlLabel = labelBase + ' (' + duplicateIndex + ')';
+                duplicateIndex += 1;
+            }
+
+            var deferredLayer = {
+                site: site,
+                layerMeta: layerMeta,
+                layerGroup: layerGroup,
+                styleIndex: index,
+                popupHtml: popupHtml,
+                controlLabel: controlLabel,
+                loaded: false,
+                hasError: false,
+                pendingPromise: null
+            };
+
+            thematicOverlayMaps[controlLabel] = layerGroup;
+            deferredThematicLayers.push(deferredLayer);
+            ensureThematicLayerRendered(deferredLayer).then(function() {
+                layerGroup.addTo(map);
+            });
+        });
+
+        if (Object.keys(thematicOverlayMaps).length > 0) {
+            thematicOverlayControl = L.control.layers(null, thematicOverlayMaps, {
+                position: 'topright',
+                collapsed: true
+            }).addTo(map);
+        }
     }
 
     map.on('overlayadd', function(evt) {
@@ -1037,34 +1097,13 @@ document.addEventListener('DOMContentLoaded', function () {
             var normalizedLayers = normalizeGeojsonLayers(site);
             var hasPoly = normalizedLayers.length > 0;
 
-            normalizedLayers.forEach(function(layerMeta) {
-                var styleIndex = deferredThematicLayers.length;
-                var layerGroup = L.layerGroup();
-                var labelBase = site.nom + ' - ' + layerMeta.name;
-                var controlLabel = labelBase;
-                var duplicateIndex = 2;
-                while (Object.prototype.hasOwnProperty.call(thematicOverlayMaps, controlLabel)) {
-                    controlLabel = labelBase + ' (' + duplicateIndex + ')';
-                    duplicateIndex += 1;
-                }
-
-                thematicOverlayMaps[controlLabel] = layerGroup;
-                deferredThematicLayers.push({
-                    site: site,
-                    layerMeta: layerMeta,
-                    layerGroup: layerGroup,
-                    styleIndex: styleIndex,
-                    popupHtml: popup,
-                    controlLabel: controlLabel,
-                    loaded: false,
-                    hasError: false,
-                    pendingPromise: null
-                });
-            });
-
             // Marqueur
             var m = L.marker([lat, lng]);
             m.bindPopup(popup, { maxWidth:290 });
+            m.on('click', function() {
+                activeSite = site;
+                showSiteThematicLayers(site, popup, normalizedLayers);
+            });
             markerLayer.addLayer(m);
             bounds.push([lat, lng]);
 
@@ -1091,6 +1130,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     activeSite = site;
                     card.classList.add('active');
                     card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                    showSiteThematicLayers(site, popup, siteLayers);
 
                     if (Array.isArray(siteLayers) && siteLayers.length > 0) {
                         try {
@@ -1110,13 +1150,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
             listWrap.appendChild(card);
         });
-
-        if (Object.keys(thematicOverlayMaps).length > 0) {
-            thematicOverlayControl = L.control.layers(null, thematicOverlayMaps, {
-                position: 'topright',
-                collapsed: true
-            }).addTo(map);
-        }
 
         if (bounds.length > 1) map.fitBounds(bounds, { padding:[40,40], maxZoom:10 });
         else if (bounds.length === 1) map.setView(bounds[0], 13);

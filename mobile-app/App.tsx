@@ -1,12 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
+import * as Device from 'expo-device';
 import * as SQLite from 'expo-sqlite';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
-import MapView, { Marker, Polygon, Polyline, Region } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 import {
   Alert,
+  BackHandler,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -19,8 +24,18 @@ import {
   Image,
 } from 'react-native';
 
-const DEFAULT_API_BASE = 'http://192.168.16.108:8080';
+const DEFAULT_API_BASE = 'https://dashboard-dms.91-134-141-197.sslip.io';
 const db = SQLite.openDatabaseSync('dms_mobile.db');
+const DEVICE_UUID_STORAGE_KEY = 'dms_mobile_device_uuid';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 type TabKey = 'dashboard' | 'sector' | 'campaign' | 'collecte_form' | 'geography' | 'movement' | 'ready_sync' | 'ossat';
 type SectorKey = 'wash' | 'sante' | 'protection' | 'education' | 'environnement' | 'abri';
@@ -42,6 +57,7 @@ const MOVEMENT_TYPE_OPTIONS: Array<{ value: MovementType; label: string }> = [
   { value: 'ajustement', label: 'Ajustement' },
 ];
 type Point = { latitude: number; longitude: number };
+type Region = Point & { latitudeDelta: number; longitudeDelta: number };
 type FormRecord = {
   id: string;
   type: 'sector' | 'geography' | 'ossat' | 'questionnaire' | 'movement';
@@ -54,7 +70,7 @@ type FormRecord = {
   sync_error?: string | null;
   sync_error_details?: SyncErrorDetail[];
 };
-type User = { id: number; name: string; email: string };
+type User = { id: number; name: string; email: string; api_token?: string };
 type QuestionnaireQuestion = {
   type: string;
   name: string;
@@ -238,16 +254,16 @@ const INITIAL_MOVEMENT_DATA: Record<string, string> = {
   type_mouvement: 'arrivee',
   raison_mouvement_id: '',
   periode: '',
-  menages: '0',
-  individus: '0',
-  f_0_5: '0',
-  f_6_17: '0',
-  f_18_59: '0',
-  f_60_plus: '0',
-  h_0_5: '0',
-  h_6_17: '0',
-  h_18_59: '0',
-  h_60_plus: '0',
+  menages: '',
+  individus: '',
+  f_0_5: '',
+  f_6_17: '',
+  f_18_59: '',
+  f_60_plus: '',
+  h_0_5: '',
+  h_6_17: '',
+  h_18_59: '',
+  h_60_plus: '',
   raison: '',
   description: '',
   source: 'application_mobile',
@@ -405,19 +421,33 @@ const sectorFieldMap: Record<SectorKey, Array<{ key: string; label: string; type
 };
 
 const boolOptions = ['Oui', 'Non'];
-const GPS_POINT_CATEGORIES: Array<{ value: GpsPointCategory; label: string }> = [
-  { value: 'robinet', label: 'Robinet' },
-  { value: 'douche', label: 'Douche' },
-  { value: 'toilette', label: 'Toilette' },
-  { value: 'abris', label: 'Abris' },
-  { value: 'point_eau', label: "Point d'eau" },
-  { value: 'centre_sante', label: 'Centre de sante' },
-  { value: 'ecole', label: 'Ecole' },
-  { value: 'universite', label: 'Universite' },
-  { value: 'marche', label: 'Marche' },
-  { value: 'hopital', label: 'Hopital' },
-  { value: 'lavage_main', label: 'Lavage main' },
-  { value: 'autre', label: 'Autre' },
+const GPS_ACCURACY_LIMIT_METERS = 15;
+const GPS_CALIBRATION_SAMPLE_COUNT = 4;
+const NEW_SITE_POPULATION_FIELDS = [
+  'menages',
+  'individus',
+  'f_0_5',
+  'f_6_17',
+  'f_18_59',
+  'f_60_plus',
+  'h_0_5',
+  'h_6_17',
+  'h_18_59',
+  'h_60_plus',
+] as const;
+const GPS_POINT_CATEGORIES: Array<{ value: GpsPointCategory; label: string; icon: string }> = [
+  { value: 'robinet', label: 'Robinet', icon: '🚰' },
+  { value: 'douche', label: 'Douche', icon: '🚿' },
+  { value: 'toilette', label: 'Toilette', icon: '🚻' },
+  { value: 'abris', label: 'Abris', icon: '🏠' },
+  { value: 'point_eau', label: "Point d'eau", icon: '💧' },
+  { value: 'centre_sante', label: 'Centre de sante', icon: '⚕️' },
+  { value: 'ecole', label: 'Ecole', icon: '🏫' },
+  { value: 'universite', label: 'Universite', icon: '🎓' },
+  { value: 'marche', label: 'Marche', icon: '🛒' },
+  { value: 'hopital', label: 'Hopital', icon: '🏥' },
+  { value: 'lavage_main', label: 'Lavage main', icon: '🧼' },
+  { value: 'autre', label: 'Autre', icon: '📍' },
 ];
 const GPS_POLYGON_CATEGORIES: Array<{ value: GpsPolygonCategory; label: string }> = [
   { value: 'contour_site', label: 'Contour site' },
@@ -440,6 +470,16 @@ const INITIAL_NEW_SITE_FORM: NewSiteFormData = {
   zone_sante: '',
   source: 'mobile',
   type_gestion: '',
+  menages: '0',
+  individus: '0',
+  f_0_5: '0',
+  f_6_17: '0',
+  f_18_59: '0',
+  f_60_plus: '0',
+  h_0_5: '0',
+  h_6_17: '0',
+  h_18_59: '0',
+  h_60_plus: '0',
 };
 
 function formatDate(date: Date): string {
@@ -582,12 +622,226 @@ function parseGeometryFromGeojson(
   return { geometryType: null, point: null, polygon: [] };
 }
 
+type LeafletMapProps = {
+    region: Region;
+    existingPoint: Point | null;
+    existingPolygon: Point[];
+    point: Point | null;
+    pointCategory: GpsPointCategory | '';
+    polygon: Point[];
+    onPress: (coordinate: Point) => void;
+  };
+
+  function LeafletMap({
+    region,
+    existingPoint,
+    existingPolygon,
+    point,
+    pointCategory,
+    polygon,
+    onPress,
+  }: LeafletMapProps) {
+    const html = useMemo(() => {
+      const selectedCategory = GPS_POINT_CATEGORIES.find((category) => category.value === pointCategory);
+      const mapData = JSON.stringify({
+        center: [region.latitude, region.longitude],
+        zoom: Math.max(3, Math.min(19, Math.round(Math.log2(360 / Math.max(region.latitudeDelta, 0.0001))) - 1)),
+        existingPoint,
+        existingPolygon,
+        point,
+        pointCategory: selectedCategory ?? null,
+        polygon,
+      }).replace(/</g, '\\u003c');
+
+      return `<!DOCTYPE html>
+  <html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <style>
+      html,body,#map{height:100%;margin:0}
+      .leaflet-control-attribution{font-size:9px}
+      .category-marker{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border:2px solid #1d4ed8;border-radius:50% 50% 50% 0;background:#fff;box-shadow:0 2px 7px rgba(15,23,42,.35);font-size:19px;transform:rotate(-45deg)}
+      .category-marker span{transform:rotate(45deg)}
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      const data = ${mapData};
+      const map = L.map('map', { zoomControl: true }).setView(data.center, data.zoom);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      const latLngs = points => (points || []).map(p => [p.latitude, p.longitude]);
+      if (data.existingPolygon.length > 1) {
+        L.polyline(latLngs(data.existingPolygon), { color: '#64748b', weight: 2 }).addTo(map);
+      }
+      if (data.existingPolygon.length > 2) {
+        L.polygon(latLngs(data.existingPolygon), { color: '#64748b', fillColor: '#64748b', fillOpacity: 0.18, weight: 2 }).addTo(map);
+      }
+      if (data.existingPoint) {
+        L.circleMarker([data.existingPoint.latitude, data.existingPoint.longitude], {
+          radius: 7, color: '#475569', fillColor: '#64748b', fillOpacity: 1
+        }).bindTooltip('Cartographie existante').addTo(map);
+      }
+      if (data.point) {
+        if (data.pointCategory) {
+          L.marker([data.point.latitude, data.point.longitude], {
+            icon: L.divIcon({
+              className: '',
+              html: '<div class="category-marker"><span>' + data.pointCategory.icon + '</span></div>',
+              iconSize: [34, 34],
+              iconAnchor: [17, 34],
+              tooltipAnchor: [0, -34]
+            })
+          }).bindTooltip(data.pointCategory.label).addTo(map);
+        } else {
+          L.circleMarker([data.point.latitude, data.point.longitude], {
+            radius: 7, color: '#1d4ed8', fillColor: '#2A87C8', fillOpacity: 1
+          }).addTo(map);
+        }
+      }
+      latLngs(data.polygon).forEach((coordinate, index) => {
+        L.circleMarker(coordinate, {
+          radius: 6, color: '#1d4ed8', fillColor: '#2A87C8', fillOpacity: 1
+        }).bindTooltip('Borne ' + (index + 1)).addTo(map);
+      });
+      if (data.polygon.length > 1) {
+        L.polyline(latLngs(data.polygon), { color: '#2A87C8', weight: 2 }).addTo(map);
+      }
+      if (data.polygon.length > 2) {
+        L.polygon(latLngs(data.polygon), { color: '#2A87C8', fillColor: '#2A87C8', fillOpacity: 0.15, weight: 2 }).addTo(map);
+      }
+      map.on('click', event => {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          latitude: event.latlng.lat,
+          longitude: event.latlng.lng
+        }));
+      });
+    </script>
+  </body>
+  </html>`;
+    }, [region, existingPoint, existingPolygon, point, pointCategory, polygon]);
+
+    return (
+      <WebView
+        style={styles.mapPreview}
+        source={{ html }}
+        originWhitelist={['*']}
+        javaScriptEnabled
+        domStorageEnabled
+        nestedScrollEnabled
+        onMessage={(event) => {
+          try {
+            const coordinate = JSON.parse(event.nativeEvent.data) as Point;
+            if (Number.isFinite(coordinate.latitude) && Number.isFinite(coordinate.longitude)) {
+              onPress(coordinate);
+            }
+          } catch (error) {
+            console.warn('Leaflet map event could not be parsed', error);
+          }
+        }}
+      />
+    );
+}
+
 function normalizeServerBaseUrl(value: string): string {
   const normalized = String(value || '').trim();
   if (!normalized) {
     return '';
   }
   return normalized.replace(/\/+$/, '');
+}
+
+function createDeviceUuid(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = character === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
+async function getDeviceUuid(): Promise<string> {
+  const storedUuid = await AsyncStorage.getItem(DEVICE_UUID_STORAGE_KEY);
+  if (storedUuid) {
+    return storedUuid;
+  }
+
+  const deviceUuid = createDeviceUuid();
+  await AsyncStorage.setItem(DEVICE_UUID_STORAGE_KEY, deviceUuid);
+  return deviceUuid;
+}
+
+async function registerMobileDevice(
+  apiBase: string,
+  apiToken: string,
+  deviceUuid: string,
+): Promise<{ notificationsEnabled: boolean; message: string }> {
+  let expoPushToken: string | null = null;
+  let permissionStatus: Notifications.PermissionStatus | null = null;
+  let notificationRegistrationFailed = false;
+
+  try {
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'Notifications DMS',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#2b7bb5',
+      });
+    }
+
+    permissionStatus = (await Notifications.getPermissionsAsync()).status;
+    if (permissionStatus !== 'granted') {
+      permissionStatus = (await Notifications.requestPermissionsAsync()).status;
+    }
+
+    if (permissionStatus === 'granted' && Device.isDevice && Constants.appOwnership !== 'expo') {
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+      if (!projectId) {
+        throw new Error('Identifiant du projet EAS absent.');
+      }
+      expoPushToken = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    } else if (permissionStatus === 'granted' && Constants.appOwnership === 'expo') {
+      notificationRegistrationFailed = true;
+    }
+  } catch {
+    notificationRegistrationFailed = true;
+    console.info('Expo/FCM push token unavailable; registering the device without notifications.');
+  }
+
+  const response = await fetch(`${apiBase}/api/mobile/devices`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      Authorization: `Bearer ${apiToken}`,
+    },
+    body: JSON.stringify({
+      device_uuid: deviceUuid,
+      expo_push_token: expoPushToken,
+      device_name: Device.modelName || Device.deviceName || `${Platform.OS} device`,
+      platform: Platform.OS,
+      app_version: Constants.expoConfig?.version ?? null,
+      notifications_enabled: permissionStatus === 'granted' && expoPushToken !== null,
+    }),
+  });
+
+  const payload = await response.json();
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.message || 'Enregistrement de l’appareil impossible.');
+  }
+
+  return {
+    notificationsEnabled: Boolean(payload.notifications_enabled),
+    message: notificationRegistrationFailed
+      ? 'Appareil enregistré. Le service de notifications Expo/FCM est temporairement indisponible.'
+      : String(payload.message || ''),
+  };
 }
 
 function ensureDatabase(): void {
@@ -772,21 +1026,33 @@ function saveFormToDb(record: FormRecord): void {
   db.runSync(
     `INSERT OR REPLACE INTO mobile_forms (id, type, campaign_id, site_id, sector, payload, status, sync_error, created_at, synced_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      record.id,
-      record.type,
-      record.campaign_id ?? null,
-      record.site_id,
-      record.sector ?? null,
-      JSON.stringify({
-        ...record.payload,
-        _sync_error_details: record.sync_error_details ?? [],
-      }),
-      record.status,
-      record.sync_error ?? null,
-      record.created_at,
-      record.status === 'synced' ? new Date().toISOString() : null,
-    ],
+    getFormStorageValues(record),
+  );
+}
+
+function getFormStorageValues(record: FormRecord): Array<string | number | null> {
+  return [
+    record.id,
+    record.type,
+    record.campaign_id ?? null,
+    record.site_id,
+    record.sector ?? null,
+    JSON.stringify({
+      ...record.payload,
+      _sync_error_details: record.sync_error_details ?? [],
+    }),
+    record.status,
+    record.sync_error ?? null,
+    record.created_at,
+    record.status === 'synced' ? new Date().toISOString() : null,
+  ];
+}
+
+async function saveFormToDbAsync(record: FormRecord): Promise<void> {
+  await db.runAsync(
+    `INSERT OR REPLACE INTO mobile_forms (id, type, campaign_id, site_id, sector, payload, status, sync_error, created_at, synced_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    getFormStorageValues(record),
   );
 }
 
@@ -989,7 +1255,9 @@ export default function App() {
   const [gpsPointOtherLabel, setGpsPointOtherLabel] = useState('');
   const [gpsPolygonCategory, setGpsPolygonCategory] = useState<GpsPolygonCategory | ''>('');
   const [gpsPolygonBlockName, setGpsPolygonBlockName] = useState('');
-  const [errorMargin, setErrorMargin] = useState('10');
+  const [errorMargin, setErrorMargin] = useState('');
+  const [isCalibratingGps, setIsCalibratingGps] = useState(false);
+  const [newSiteGeographyStep, setNewSiteGeographyStep] = useState<'population' | 'polygon'>('population');
   const [polygonPoints, setPolygonPoints] = useState<Point[]>([]);
   const [point, setPoint] = useState<Point | null>(null);
   const [mapRegion, setMapRegion] = useState<Region>(INITIAL_REGION);
@@ -1025,6 +1293,7 @@ export default function App() {
   const [activeQuestionnaireSubgroup, setActiveQuestionnaireSubgroup] = useState('__all__');
   const [isQuestionnaireLoading, setIsQuestionnaireLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSavingLocally, setIsSavingLocally] = useState(false);
   const [referenceProvinces, setReferenceProvinces] = useState<ProvinceRef[]>([]);
   const [referenceTerritoires, setReferenceTerritoires] = useState<TerritoireRef[]>([]);
   const [referenceCommunes, setReferenceCommunes] = useState<CommuneRef[]>([]);
@@ -1038,6 +1307,7 @@ export default function App() {
   const [activePickerKey, setActivePickerKey] = useState<string | null>(null);
   const [pickerSearchMap, setPickerSearchMap] = useState<Record<string, string>>({});
   const polygonTrackingSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
+  const localSaveInProgressRef = useRef(false);
   const { height: screenHeight } = useWindowDimensions();
   const picklistMaxHeight = Math.min(240, Math.max(140, Math.floor(screenHeight * 0.3)));
   const apiBase = useMemo(
@@ -1048,13 +1318,20 @@ export default function App() {
   useEffect(() => {
     ensureDatabase();
     const bootstrap = async () => {
+      const storedApiBase = normalizeServerBaseUrl(readMobileSetting('api_base') || '');
+      const effectiveApiBase = storedApiBase || DEFAULT_API_BASE;
+      if (storedApiBase) {
+        setServerBaseUrl(storedApiBase);
+      }
+
       const storedUser = await readStoredSession();
       if (storedUser) {
         setUser(storedUser);
-      }
-      const storedApiBase = normalizeServerBaseUrl(readMobileSetting('api_base') || '');
-      if (storedApiBase) {
-        setServerBaseUrl(storedApiBase);
+        if (storedUser.api_token) {
+          getDeviceUuid()
+            .then((deviceUuid) => registerMobileDevice(effectiveApiBase, storedUser.api_token as string, deviceUuid))
+            .catch(() => console.info('Background device registration refresh failed.'));
+        }
       }
       const cachedReferences = readCachedReferences();
       if (cachedReferences) {
@@ -1093,6 +1370,7 @@ export default function App() {
         headers: {
           Accept: 'application/json',
           'Cache-Control': 'no-cache',
+          Authorization: `Bearer ${user.api_token ?? ''}`,
         },
       });
       const payload = await response.json();
@@ -1632,6 +1910,39 @@ export default function App() {
     [referenceCommunes, selectedCommuneId],
   );
 
+  const resolveRecordLocation = (record: FormRecord) => {
+    const payload = record.payload ?? {};
+    const newSite = payload.new_site && typeof payload.new_site === 'object'
+      ? payload.new_site as Record<string, unknown>
+      : {};
+    const resolvedSiteId = Number(payload.site_id ?? record.site_id ?? 0);
+    const site = referenceSites.find((entry) => Number(entry.id) === resolvedSiteId);
+    const province = String(
+      newSite.province
+      ?? referenceProvinces.find((entry) => Number(entry.id) === Number(payload.province_id ?? 0))?.name
+      ?? site?.province
+      ?? '-',
+    );
+    const territoire = String(
+      newSite.territoire
+      ?? referenceTerritoires.find((entry) => Number(entry.id) === Number(payload.territoire_id ?? 0))?.name
+      ?? site?.territoire
+      ?? '-',
+    );
+    const commune = String(
+      newSite.zone_sante
+      ?? referenceCommunes.find((entry) => Number(entry.id) === Number(payload.commune_id ?? 0))?.name
+      ?? site?.zone_sante
+      ?? '-',
+    );
+    const siteLabel = site
+      ? `${String(site.nom ?? `Site ${resolvedSiteId}`)}${site.code_site ? ` (${site.code_site})` : ''}`
+      : String(newSite.nom ?? '').trim()
+      || (resolvedSiteId > 0 ? `Site ${resolvedSiteId}` : 'Nouveau site');
+
+    return { province, territoire, commune, site, siteLabel };
+  };
+
   const filteredTerritoires = useMemo(() => {
     if (!selectedProvinceId) {
       return [];
@@ -1849,6 +2160,33 @@ export default function App() {
   }, [siteSelectionMode, siteId, safeQueue, referenceSites]);
 
   const refreshQueue = () => setQueue(readReconciledStoredForms());
+  const persistLocalForm = async (record: FormRecord): Promise<boolean> => {
+    if (localSaveInProgressRef.current) {
+      return false;
+    }
+
+    localSaveInProgressRef.current = true;
+    setIsSavingLocally(true);
+    try {
+      await saveFormToDbAsync(record);
+      setQueue((current) => [
+        record,
+        ...current.filter((item) => item.id !== record.id),
+      ].sort((left, right) => right.created_at.localeCompare(left.created_at)));
+      return true;
+    } catch (error) {
+      console.error('Local form save failed', error);
+      const reason = error instanceof Error ? error.message : 'Erreur SQLite inconnue.';
+      Alert.alert(
+        'Enregistrement local impossible',
+        `Le formulaire n’a pas été enregistré. Réessayez avant de quitter cette page.\n\nDétail : ${reason}`,
+      );
+      return false;
+    } finally {
+      localSaveInProgressRef.current = false;
+      setIsSavingLocally(false);
+    }
+  };
   const refreshCampaigns = useCallback(() => {
     if (!user) {
       setCampaigns([]);
@@ -1896,6 +2234,48 @@ export default function App() {
     const name = String(newSiteData.nom ?? '').trim();
     return name.length > 0;
   }, [newSiteData]);
+
+  const validateNewSitePopulation = (): boolean => {
+    if (!hasValidNewSite) {
+      Alert.alert('Nouveau site', 'Renseignez le nom du nouveau site avant de continuer.');
+      return false;
+    }
+
+    const values = NEW_SITE_POPULATION_FIELDS.reduce<Record<string, number>>((result, field) => {
+      result[field] = Number(newSiteData[field]);
+      return result;
+    }, {});
+    const invalidField = NEW_SITE_POPULATION_FIELDS.find((field) =>
+      String(newSiteData[field] ?? '').trim() === ''
+      || !Number.isInteger(values[field])
+      || values[field] < 0,
+    );
+    if (invalidField) {
+      Alert.alert(
+        'Population incomplète',
+        `${movementPopulationFieldLabel(invalidField)} doit être un nombre entier positif ou nul.`,
+      );
+      return false;
+    }
+    if (values.menages <= 0 || values.individus <= 0) {
+      Alert.alert('Population incomplète', 'Le nombre de ménages et d’individus doit être supérieur à zéro.');
+      return false;
+    }
+
+    const demographicTotal = MOVEMENT_DEMOGRAPHIC_FIELDS.reduce(
+      (total, field) => total + values[field.key],
+      0,
+    );
+    if (demographicTotal !== values.individus) {
+      Alert.alert(
+        'Population incohérente',
+        `Le total des groupes d’âge et de sexe (${demographicTotal}) doit être égal au nombre d’individus (${values.individus}).`,
+      );
+      return false;
+    }
+
+    return true;
+  };
 
   useEffect(() => {
     const hasValidExistingSite = String(siteId || '').trim().length > 0 && Number(siteId) > 0;
@@ -2097,22 +2477,100 @@ export default function App() {
         return null;
       }
 
-      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+      const accuracy = Number(current.coords.accuracy);
+      setErrorMargin(Number.isFinite(accuracy) ? String(Math.round(accuracy)) : '');
       const nextPoint = {
         latitude: current.coords.latitude,
         longitude: current.coords.longitude,
       };
-      setPoint(nextPoint);
       setMapRegion({
         latitude: nextPoint.latitude,
         longitude: nextPoint.longitude,
         latitudeDelta: 0.02,
         longitudeDelta: 0.02,
       });
+
+      if (!Number.isFinite(accuracy) || accuracy > GPS_ACCURACY_LIMIT_METERS) {
+        Alert.alert(
+          'Précision GPS insuffisante',
+          Number.isFinite(accuracy)
+            ? `La précision actuelle est de ${Math.round(accuracy)} m. Elle doit être de ${GPS_ACCURACY_LIMIT_METERS} m ou moins. Utilisez « Étalonner GPS » puis réessayez.`
+            : 'La précision GPS est indisponible. Utilisez « Étalonner GPS » puis réessayez.',
+        );
+        return null;
+      }
+
+      setPoint(nextPoint);
       return nextPoint;
     } catch (error) {
       console.warn('Location fetch failed', error);
+      Alert.alert('GPS', 'Impossible d’obtenir une position suffisamment précise.');
       return null;
+    }
+  };
+
+  const calibrateGpsAccuracy = async () => {
+    if (isCalibratingGps) {
+      return;
+    }
+
+    setIsCalibratingGps(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission GPS', 'Autorisez la localisation pour étalonner la précision.');
+        return;
+      }
+
+      let bestLocation: Location.LocationObject | null = null;
+      for (let index = 0; index < GPS_CALIBRATION_SAMPLE_COUNT; index += 1) {
+        const sample = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.BestForNavigation,
+        });
+        const sampleAccuracy = Number(sample.coords.accuracy);
+        const bestAccuracy = Number(bestLocation?.coords.accuracy);
+        if (
+          Number.isFinite(sampleAccuracy)
+          && (!bestLocation || !Number.isFinite(bestAccuracy) || sampleAccuracy < bestAccuracy)
+        ) {
+          bestLocation = sample;
+        }
+        if (sampleAccuracy <= GPS_ACCURACY_LIMIT_METERS) {
+          break;
+        }
+      }
+
+      if (!bestLocation) {
+        setErrorMargin('');
+        Alert.alert('Étalonnage GPS', 'Aucune mesure de précision GPS n’a été obtenue.');
+        return;
+      }
+
+      const accuracy = Number(bestLocation.coords.accuracy);
+      const calibratedPoint = {
+        latitude: bestLocation.coords.latitude,
+        longitude: bestLocation.coords.longitude,
+      };
+      setErrorMargin(String(Math.round(accuracy)));
+      setMapRegion({
+        latitude: calibratedPoint.latitude,
+        longitude: calibratedPoint.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      });
+
+      Alert.alert(
+        accuracy <= GPS_ACCURACY_LIMIT_METERS ? 'GPS étalonné' : 'Précision insuffisante',
+        accuracy <= GPS_ACCURACY_LIMIT_METERS
+          ? `Précision obtenue : ${Math.round(accuracy)} m. Vous pouvez prendre le point.`
+          : `Meilleure précision obtenue : ${Math.round(accuracy)} m. Déplacez-vous vers une zone plus dégagée et recommencez. Le seuil maximum est ${GPS_ACCURACY_LIMIT_METERS} m.`,
+      );
+    } catch (error) {
+      console.warn('GPS calibration failed', error);
+      Alert.alert('Étalonnage GPS', 'Impossible d’étalonner le GPS pour le moment.');
+    } finally {
+      setIsCalibratingGps(false);
     }
   };
 
@@ -2126,10 +2584,15 @@ export default function App() {
     }
 
     try {
+      const deviceUuid = await getDeviceUuid();
       const response = await fetch(`${apiBase}/api/mobile/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail, password: normalizedPassword }),
+        body: JSON.stringify({
+          email: normalizedEmail,
+          password: normalizedPassword,
+          device_uuid: deviceUuid,
+        }),
       });
 
       const payload = await response.json();
@@ -2137,10 +2600,28 @@ export default function App() {
         throw new Error(payload?.message || 'Connexion impossible.');
       }
 
-      const nextUser: User = payload.user;
+      const nextUser: User = {
+        ...payload.user,
+        api_token: payload.api_token,
+      };
       setUser(nextUser);
       writeStoredSession(nextUser);
-      Alert.alert('Connexion', payload.message || 'Connecté.');
+      try {
+        const registration = await registerMobileDevice(apiBase, nextUser.api_token || '', deviceUuid);
+        Alert.alert(
+          'Connexion',
+          registration.notificationsEnabled
+            ? `${payload.message || 'Connecté.'}\nNotifications activées sur cet appareil.`
+            : `${payload.message || 'Connecté.'}\n${registration.message || 'Appareil enregistré sans notification active.'}`,
+        );
+      } catch (registrationError) {
+        Alert.alert(
+          'Connexion réussie',
+          `Vous êtes connecté, mais l’appareil n’a pas pu être enregistré pour les notifications.\n${
+            registrationError instanceof Error ? registrationError.message : ''
+          }`,
+        );
+      }
     } catch (error) {
       Alert.alert('Erreur de connexion', error instanceof Error ? error.message : 'Identifiants invalides.');
     }
@@ -2164,6 +2645,7 @@ export default function App() {
         headers: {
           Accept: 'application/json',
           'Cache-Control': 'no-cache',
+          Authorization: `Bearer ${user?.api_token ?? ''}`,
         },
       });
       Alert.alert(
@@ -2222,34 +2704,92 @@ export default function App() {
     setTab('dashboard');
   };
 
+  const hasCartoServiceChanges = () => {
+    if (tab !== 'collecte_form' || openedSavedFormStatus === 'pending') {
+      return false;
+    }
+    return Boolean(
+      editingFormId
+      || String(siteId).trim()
+      || selectedProvinceId
+      || selectedTerritoireId
+      || selectedCommuneId
+      || String(newSiteData.nom ?? '').trim()
+      || photos.length
+      || Object.values(questionnaireAnswers).some((value) => String(value ?? '').trim())
+      || Object.entries(sectorData).some(([key, value]) => key !== 'date_collecte' && String(value ?? '').trim()),
+    );
+  };
+
+  const hasGeographyChanges = () => geographyPanelMode === 'form' && Boolean(
+    editingGeographyFormId
+    || String(siteId).trim()
+    || selectedProvinceId
+    || selectedTerritoireId
+    || selectedCommuneId
+    || String(newSiteData.nom ?? '').trim()
+    || point
+    || polygonPoints.length
+    || gpsPointCategory
+    || gpsPolygonCategory,
+  );
+
+  const confirmFormExit = (
+    hasChanges: boolean,
+    saveDraft: () => Promise<boolean>,
+    discard: () => void,
+  ) => {
+    if (!hasChanges) {
+      discard();
+      return;
+    }
+    Alert.alert(
+      'Modifications non enregistrées',
+      'Voulez-vous enregistrer les modifications dans les brouillons avant de quitter ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Quitter sans enregistrer', style: 'destructive', onPress: discard },
+        {
+          text: 'Enregistrer le brouillon',
+          onPress: () => {
+            void (async () => {
+              if (await saveDraft()) {
+                discard();
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
   const handleBottomNav = async (key: 'dashboard' | 'collecte' | 'geography' | 'sync' | 'profile') => {
-    setActiveTab(key);
+    const navigate = () => {
+      setActiveTab(key);
+      if (key === 'dashboard') {
+        setTab('dashboard');
+      } else if (key === 'collecte') {
+        setTab('sector');
+      } else if (key === 'geography') {
+        setGeographyPanelMode('list');
+        setGeographyListMode('all');
+        setTab('geography');
+      } else if (key === 'sync') {
+        openReadySync('dashboard');
+      } else if (key === 'profile') {
+        setTab('dashboard');
+      }
+    };
 
-    if (key === 'dashboard') {
-      setTab('dashboard');
+    if (tab === 'collecte_form') {
+      confirmFormExit(hasCartoServiceChanges(), () => saveSectorDraft('draft'), navigate);
       return;
     }
-
-    if (key === 'collecte') {
-      setTab('sector');
+    if (tab === 'geography' && geographyPanelMode === 'form') {
+      confirmFormExit(hasGeographyChanges(), () => saveGeographyForm('draft'), navigate);
       return;
     }
-
-    if (key === 'geography') {
-      setGeographyPanelMode('list');
-      setGeographyListMode('all');
-      setTab('geography');
-      return;
-    }
-
-    if (key === 'sync') {
-      openReadySync('dashboard');
-      return;
-    }
-
-    if (key === 'profile') {
-      setTab('dashboard');
-    }
+    navigate();
   };
 
   const openAction = (actionKey: string) => {
@@ -2334,9 +2874,9 @@ export default function App() {
       return;
     }
 
-    if (actionKey === 'Sync') {
+    if (actionKey === 'Synchronisés') {
       if (!serviceCollecteForms.some((item) => item.status === 'synced')) {
-        Alert.alert('Sync', 'Aucun formulaire déjà synchronisé.');
+        Alert.alert('Données synchronisées', 'Aucune collecte de cartographie des services déjà synchronisée.');
       }
       setActiveTab('collecte');
       setTab('campaign');
@@ -2497,31 +3037,40 @@ export default function App() {
     Alert.alert('Test', 'La thématique courante a été remplie aléatoirement.');
   };
 
-  const addPointFromLocation = () => {
-    if (!point) {
-      void getCurrentLocation();
+  const refreshPointFromLocation = async () => {
+    const currentPoint = await getCurrentLocation();
+    if (!currentPoint) {
       return;
     }
 
     if (isPolygonMode) {
       setPolygonPoints((prev) => {
         if (prev.length === 0) {
-          return [point];
+          return [currentPoint];
         }
         const lastPoint = prev[prev.length - 1];
-        if (distanceBetweenPointsMeters(lastPoint, point) < 2) {
+        if (distanceBetweenPointsMeters(lastPoint, currentPoint) < 2) {
           return prev;
         }
-        return [...prev, point];
+        return [...prev, currentPoint];
       });
+    }
+  };
+
+  const addSelectedMapPoint = (coordinate: Point) => {
+    const measuredAccuracy = Number(errorMargin);
+    if (
+      String(errorMargin).trim() === ''
+      || !Number.isFinite(measuredAccuracy)
+      || measuredAccuracy > GPS_ACCURACY_LIMIT_METERS
+    ) {
+      Alert.alert(
+        'Précision GPS requise',
+        `Étalonnez le GPS et obtenez une précision de ${GPS_ACCURACY_LIMIT_METERS} m ou moins avant d’ajouter un point sur la carte.`,
+      );
       return;
     }
 
-    setPoint(point);
-  };
-
-  const addSelectedMapPoint = (event: any) => {
-    const coordinate = event.nativeEvent.coordinate;
     const nextPoint = {
       latitude: coordinate.latitude,
       longitude: coordinate.longitude,
@@ -2544,8 +3093,12 @@ export default function App() {
     setPoint(nextPoint);
   };
 
-  const clearPolygon = () => {
-    setPolygonPoints([]);
+  const clearSelectedGeometry = () => {
+    if (isPolygonMode) {
+      setPolygonPoints([]);
+      return;
+    }
+    setPoint(null);
   };
 
   const removeLastPolygonBorne = () => {
@@ -2581,19 +3134,22 @@ export default function App() {
           distanceInterval: 5,
         },
         (location) => {
+          const accuracy = Number(location.coords.accuracy);
           const nextPoint: Point = {
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
           };
 
-          setPoint(nextPoint);
           setMapRegion({
             latitude: nextPoint.latitude,
             longitude: nextPoint.longitude,
             latitudeDelta: 0.01,
             longitudeDelta: 0.01,
           });
-          setErrorMargin(String(Math.round(location.coords.accuracy ?? 0)));
+          setErrorMargin(Number.isFinite(accuracy) ? String(Math.round(accuracy)) : '');
+          if (Number.isFinite(accuracy) && accuracy <= GPS_ACCURACY_LIMIT_METERS) {
+            setPoint(nextPoint);
+          }
         },
       );
 
@@ -2626,7 +3182,8 @@ export default function App() {
     setExistingSitePolygonPoints([]);
     setPoint(null);
     setPolygonPoints([]);
-    setErrorMargin('10');
+    setErrorMargin('');
+    setNewSiteGeographyStep('population');
     setGeographyListMode('all');
     setGeographyPanelMode('form');
   };
@@ -2646,6 +3203,11 @@ export default function App() {
     setSelectedCommuneId(payload.commune_id != null ? String(payload.commune_id) : '');
     const isNewSiteRecord = Boolean(payload?.is_new_site) || (payload?.new_site && typeof payload.new_site === 'object');
     setSiteSelectionMode(isNewSiteRecord ? 'new' : 'existing');
+    setNewSiteGeographyStep(
+      isNewSiteRecord && Array.isArray(payload?.geojson?.features) && payload.geojson.features.length > 0
+        ? 'polygon'
+        : 'population',
+    );
     if (isNewSiteRecord && payload?.new_site && typeof payload.new_site === 'object') {
       const nextNewSite = { ...INITIAL_NEW_SITE_FORM };
       Object.entries(payload.new_site as Record<string, unknown>).forEach(([key, value]) => {
@@ -2657,7 +3219,7 @@ export default function App() {
     }
     setDateCollecte(String(payload.date_collecte ?? dateCollecte));
     setGeometryType(payload.geometry_type === 'point' ? 'point' : 'polygon');
-    setErrorMargin(String(payload.accuracy_meters ?? '10'));
+    setErrorMargin(payload.accuracy_meters == null ? '' : String(payload.accuracy_meters));
     const geojson = payload.geojson;
     const featureProps = geojson?.features?.[0]?.properties ?? {};
     const resolvedPointCategory = String(payload.point_category ?? featureProps.point_category ?? '').trim();
@@ -2781,7 +3343,7 @@ export default function App() {
     setMovementPanelMode('form');
   };
 
-  const saveMovementForm = (targetStatus: 'draft' | 'pending') => {
+  const saveMovementForm = async (targetStatus: 'draft' | 'pending') => {
     if (!user) {
       Alert.alert('Connexion requise', 'Connectez-vous pour enregistrer un mouvement.');
       return;
@@ -2861,8 +3423,9 @@ export default function App() {
       sync_error: null,
     };
 
-    saveFormToDb(record);
-    refreshQueue();
+    if (!(await persistLocalForm(record))) {
+      return;
+    }
     setEditingMovementFormId(null);
     setEditingMovementCreatedAt(null);
     setEditingMovementSyncError(null);
@@ -2935,14 +3498,14 @@ export default function App() {
     );
   };
 
-  const saveSectorDraft = (targetStatus: 'draft' | 'pending' = 'pending') => {
+  const saveSectorDraft = async (targetStatus: 'draft' | 'pending' = 'pending') => {
     if (!user) {
       Alert.alert('Connexion requise', 'Connectez-vous pour enregistrer une collecte.');
-      return;
+      return false;
     }
     if (openedSavedFormStatus === 'pending') {
       Alert.alert('Lecture seule', 'Ce formulaire est déjà prêt à envoyer. La modification est bloquée.');
-      return;
+      return false;
     }
 
     const siteValue = String(siteId || '').trim();
@@ -2953,7 +3516,7 @@ export default function App() {
     const hasValidSite = siteSelectionMode === 'existing' ? hasValidExistingSite : hasValidNewSite;
     const siteNumber = siteSelectionMode === 'existing' ? existingSiteNumber : 0;
 
-    if (!hasValidSite || !hasValidDate) {
+    if (targetStatus === 'pending' && (!hasValidSite || !hasValidDate)) {
       setCollecteMetaErrors({ site: !hasValidSite, date: !hasValidDate });
       Alert.alert(
         'Site et date requis',
@@ -2961,11 +3524,11 @@ export default function App() {
           ? 'Indiquez au moins le nom du nouveau site et une date de collecte (AAAA-MM-JJ).'
           : 'Indiquez un site valide et une date de collecte (AAAA-MM-JJ) avant de sauvegarder.',
       );
-      return;
+      return false;
     }
     const collectePeriod = activeCampaign?.period_mm_yyyy || collecteDateToPeriod(collecteDate);
 
-    if (questionnaire) {
+    if (targetStatus === 'pending' && questionnaire) {
       const missingRequiredQuestions: string[] = [];
       const missingRequiredKeys = new Set<string>();
 
@@ -3033,7 +3596,7 @@ export default function App() {
           'Champs obligatoires manquants',
           `Complétez les éléments obligatoires avant sauvegarde :\n- ${preview}${suffix}`,
         );
-        return;
+        return false;
       }
       setInvalidRequiredQuestionKeys({});
     }
@@ -3097,8 +3660,9 @@ export default function App() {
       status: targetStatus,
     };
 
-    saveFormToDb(record);
-    refreshQueue();
+    if (!(await persistLocalForm(record))) {
+      return false;
+    }
     setEditingFormId(null);
     setEditingFormCreatedAt(null);
     setOpenedSavedFormStatus(null);
@@ -3115,30 +3679,50 @@ export default function App() {
     setCollecteListMode('none');
     setActiveTab('collecte');
     setTab('sector');
+    return true;
   };
 
-  const saveGeographyForm = (targetStatus: 'draft' | 'pending') => {
+  const saveGeographyForm = async (targetStatus: 'draft' | 'pending') => {
     if (!user) {
       Alert.alert('Connexion requise', 'Connectez-vous pour enregistrer une collecte.');
-      return;
+      return false;
     }
 
     const siteNumber = Number(siteId || activeCampaign?.site_id || 0);
     const hasValidExistingSite = !Number.isNaN(siteNumber) && siteNumber > 0;
     const hasValidSite = siteSelectionMode === 'existing' ? hasValidExistingSite : hasValidNewSite;
-    if (!hasValidSite) {
+    if (targetStatus === 'pending' && !hasValidSite) {
       Alert.alert(
         'Site requis',
         siteSelectionMode === 'new'
           ? 'Renseignez au moins le nom du nouveau site.'
           : 'Veuillez saisir un identifiant de site valide.',
       );
-      return;
+      return false;
     }
     const collecteDate = String(dateCollecte || '').trim();
-    if (!isValidCollecteDate(collecteDate)) {
+    if (targetStatus === 'pending' && !isValidCollecteDate(collecteDate)) {
       Alert.alert('Date requise', 'Indiquez une date valide au format AAAA-MM-JJ.');
-      return;
+      return false;
+    }
+    if (targetStatus === 'pending' && siteSelectionMode === 'new' && !validateNewSitePopulation()) {
+      return false;
+    }
+
+    const measuredAccuracy = Number(errorMargin);
+    if (
+      targetStatus === 'pending'
+      && (
+        String(errorMargin).trim() === ''
+        || !Number.isFinite(measuredAccuracy)
+        || measuredAccuracy > GPS_ACCURACY_LIMIT_METERS
+      )
+    ) {
+      Alert.alert(
+        'Précision GPS insuffisante',
+        `Étalonnez le GPS et obtenez une précision de ${GPS_ACCURACY_LIMIT_METERS} m ou moins avant l’enregistrement.`,
+      );
+      return false;
     }
 
     if (siteSelectionMode === 'new') {
@@ -3149,32 +3733,32 @@ export default function App() {
 
     const effectiveGeometryType: 'point' | 'polygon' = siteSelectionMode === 'new' ? 'polygon' : geometryType;
     const coordinates = effectiveGeometryType === 'polygon' ? polygonPoints : point ? [point] : [];
-    if (coordinates.length === 0) {
+    if (targetStatus === 'pending' && coordinates.length === 0) {
       Alert.alert('Géographie incomplète', 'Ajoutez au moins un point de collecte.');
-      return;
+      return false;
     }
-    if (effectiveGeometryType === 'polygon' && coordinates.length < 3) {
+    if (targetStatus === 'pending' && effectiveGeometryType === 'polygon' && coordinates.length < 3) {
       Alert.alert('Contour incomplet', 'Le contour d’un site doit contenir au moins 3 points.');
-      return;
+      return false;
     }
-    if (effectiveGeometryType === 'point') {
+    if (targetStatus === 'pending' && effectiveGeometryType === 'point') {
       if (!gpsPointCategory) {
         Alert.alert('Catégorie requise', 'Sélectionnez la catégorie du point GPS.');
-        return;
+        return false;
       }
       if (gpsPointCategory === 'autre' && !String(gpsPointOtherLabel || '').trim()) {
         Alert.alert('Précision requise', 'Précisez la catégorie "Autre" du point GPS.');
-        return;
+        return false;
       }
     }
-    if (effectiveGeometryType === 'polygon' && siteSelectionMode !== 'new') {
+    if (targetStatus === 'pending' && effectiveGeometryType === 'polygon' && siteSelectionMode !== 'new') {
       if (!gpsPolygonCategory) {
         Alert.alert('Catégorie requise', 'Sélectionnez la catégorie du polygone GPS.');
-        return;
+        return false;
       }
       if (gpsPolygonCategory === 'bloc' && !String(gpsPolygonBlockName || '').trim()) {
         Alert.alert('Nom du bloc requis', 'Saisissez le nom du bloc pour ce polygone.');
-        return;
+        return false;
       }
     }
 
@@ -3196,15 +3780,15 @@ export default function App() {
       campaign_id: activeCampaign?.id ?? null,
       periode_collecte: activeCampaign?.period_mm_yyyy ?? collecteDateToPeriod(collecteDate),
       date_collecte: collecteDate,
-      latitude: coordinates[0].latitude,
-      longitude: coordinates[0].longitude,
+      latitude: coordinates[0]?.latitude ?? null,
+      longitude: coordinates[0]?.longitude ?? null,
       site_id: siteSelectionMode === 'existing' ? siteNumber : null,
       is_new_site: siteSelectionMode === 'new',
       new_site: normalizedNewSitePayload,
       province_id: selectedProvinceId ? Number(selectedProvinceId) : null,
       territoire_id: selectedTerritoireId ? Number(selectedTerritoireId) : null,
       commune_id: selectedCommuneId ? Number(selectedCommuneId) : null,
-      accuracy_meters: Number(errorMargin) || 0,
+      accuracy_meters: String(errorMargin).trim() === '' ? null : measuredAccuracy,
       geometry_type: effectiveGeometryType,
       point_category: effectiveGeometryType === 'point' ? gpsPointCategory : null,
       point_category_other: effectiveGeometryType === 'point' && gpsPointCategory === 'autre' ? String(gpsPointOtherLabel).trim() : null,
@@ -3213,13 +3797,13 @@ export default function App() {
       photos,
       geojson: {
         type: 'FeatureCollection',
-        features: [
+        features: coordinates.length === 0 ? [] : [
           {
             type: 'Feature',
             properties: {
               source: 'mobile_app',
               geometry_type: effectiveGeometryType,
-              accuracy_meters: Number(errorMargin) || 0,
+              accuracy_meters: String(errorMargin).trim() === '' ? null : measuredAccuracy,
               point_category: effectiveGeometryType === 'point' ? gpsPointCategory : null,
               point_category_other: effectiveGeometryType === 'point' && gpsPointCategory === 'autre' ? String(gpsPointOtherLabel).trim() : null,
               polygon_category: effectiveGeometryType === 'polygon' ? (siteSelectionMode === 'new' ? 'contour_site' : gpsPolygonCategory) : null,
@@ -3249,8 +3833,9 @@ export default function App() {
       status: targetStatus,
     };
 
-    saveFormToDb(record);
-    refreshQueue();
+    if (!(await persistLocalForm(record))) {
+      return false;
+    }
     stopPolygonTracking();
     setEditingGeographyFormId(null);
     setEditingGeographyCreatedAt(null);
@@ -3263,7 +3848,45 @@ export default function App() {
         ? 'La collecte géographique est enregistrée dans les brouillons.'
         : 'La collecte géographique est enregistrée et prête à être envoyée.',
     );
+    return true;
   };
+
+  const exitCartoServiceForm = () => {
+    confirmFormExit(
+      hasCartoServiceChanges(),
+      () => saveSectorDraft('draft'),
+      () => {
+        setActiveTab('dashboard');
+        setTab('dashboard');
+      },
+    );
+  };
+
+  const exitGeographyForm = () => {
+    confirmFormExit(
+      hasGeographyChanges(),
+      () => saveGeographyForm('draft'),
+      () => {
+        stopPolygonTracking();
+        setGeographyPanelMode('list');
+      },
+    );
+  };
+
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (tab === 'collecte_form') {
+        exitCartoServiceForm();
+        return true;
+      }
+      if (tab === 'geography' && geographyPanelMode === 'form') {
+        exitGeographyForm();
+        return true;
+      }
+      return false;
+    });
+    return () => subscription.remove();
+  });
 
   const saveOssatDraft = async () => {
     if (!user) {
@@ -3311,8 +3934,9 @@ export default function App() {
       status: 'pending',
     };
 
-    saveFormToDb(record);
-    refreshQueue();
+    if (!(await persistLocalForm(record))) {
+      return;
+    }
     Alert.alert('Sauvegardé', 'Formulaire OSSAT enregistré dans la file locale.');
   };
 
@@ -3332,7 +3956,10 @@ export default function App() {
     const response = await fetch(`${apiBase}/api/mobile/photo-upload`, {
       method: 'POST',
       body: formData,
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${user?.api_token ?? ''}`,
+      },
     });
 
     const payload = await response.json();
@@ -3400,7 +4027,11 @@ export default function App() {
           if (item.type === 'ossat') {
             const response = await fetch(`${apiBase}/api/mobile/ossat/save`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                Authorization: `Bearer ${user.api_token ?? ''}`,
+              },
               body: JSON.stringify({ user_id: user.id, site_id: item.site_id, payload: { ...payloadForSync, photos: payloadForSync.photos || [] } }),
             });
 
@@ -3413,7 +4044,11 @@ export default function App() {
           } else if (item.type === 'questionnaire') {
             const response = await fetch(`${apiBase}/api/mobile/questionnaire/submit`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                Authorization: `Bearer ${user.api_token ?? ''}`,
+              },
               body: JSON.stringify({
                 user_id: user.id,
                 questionnaire_code: payloadForSync?.questionnaire_code || 'service-cartography',
@@ -3437,7 +4072,11 @@ export default function App() {
           } else {
             const response = await fetch(`${apiBase}/api/mobile/sync`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                Authorization: `Bearer ${user.api_token ?? ''}`,
+              },
               body: JSON.stringify({ user_id: user.id, records: [{ ...item, payload: { ...payloadForSync, photos: payloadForSync.photos || [] } }] }),
             });
 
@@ -3524,7 +4163,7 @@ export default function App() {
     { key: 'Nouvelle collecte', icon: '🆕', tone: 'light' },
     { key: 'Brouillons', icon: '🗂️', tone: 'light' },
     { key: 'Pret a envoyer', icon: '📤', tone: 'highlight' },
-    { key: 'Sync', icon: '✅', tone: 'light' },
+    { key: 'Synchronisés', icon: '✅', tone: 'light' },
   ] as const;
 
   const renderSearchablePicklist = (
@@ -3686,6 +4325,7 @@ export default function App() {
                   return;
                 }
                 setSiteSelectionMode('existing');
+                setNewSiteGeographyStep('population');
               }}
             >
               <Text style={[styles.toggleButtonText, siteSelectionMode === 'existing' && styles.toggleButtonTextActive]}>Site existant</Text>
@@ -3702,6 +4342,7 @@ export default function App() {
                 setGpsPointOtherLabel('');
                 setGpsPolygonCategory('contour_site');
                 setGpsPolygonBlockName('');
+                setNewSiteGeographyStep('population');
               }}
             >
               <Text style={[styles.toggleButtonText, siteSelectionMode === 'new' && styles.toggleButtonTextActive]}>Nouveau site</Text>
@@ -3836,6 +4477,24 @@ export default function App() {
             String(newSiteData.type_gestion ?? ''),
             disabled,
           )}
+          <Text style={styles.collecteSectionTitle}>Population initiale</Text>
+          <Text style={styles.campaignDetailsHint}>
+            Saisissez la population avant de passer à la prise du contour.
+          </Text>
+          {NEW_SITE_POPULATION_FIELDS.map((field) => (
+            <View key={`new-site-population-${field}`}>
+              <Text style={styles.fieldLabel}>{movementPopulationFieldLabel(field)} *</Text>
+              <TextInput
+                style={[styles.input, disabled && styles.inputDisabled]}
+                value={String(newSiteData[field] ?? '')}
+                onChangeText={(value) => updateNewSiteField(field, value.replace(/[^0-9]/g, ''))}
+                editable={!disabled}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor="#94a3b8"
+              />
+            </View>
+          ))}
           <Text style={styles.campaignCardHint}>
             Pour un nouveau site en collecte géographique, seul le contour (polygone) est autorisé.
           </Text>
@@ -3910,7 +4569,7 @@ export default function App() {
     <ScrollView contentContainerStyle={[styles.screenContent, { paddingBottom: 170 }]}>
       <View style={styles.topStatusBar}>
         <View style={styles.brandRow}>
-          <TouchableOpacity onPress={() => { setActiveTab('dashboard'); setTab('dashboard'); }} style={styles.backButton}>
+          <TouchableOpacity onPress={exitCartoServiceForm} style={styles.backButton}>
             <Text style={styles.backButtonText}>←</Text>
           </TouchableOpacity>
           <Image source={{ uri: `${apiBase}/images/logo-dms-cccm.avif` }} style={styles.brandLogoMini} resizeMode="contain" />
@@ -3959,7 +4618,7 @@ export default function App() {
                 ? `${action.key} (${draftFormCount})`
                 : action.key === 'Pret a envoyer'
                 ? `${action.key} (${pendingFormCount})`
-                : action.key === 'Sync'
+                : action.key === 'Synchronisés'
                 ? `${action.key} (${syncedFormCount})`
                 : action.key}
             </Text>
@@ -4018,6 +4677,29 @@ export default function App() {
                 })}
               </ScrollView>
             )}
+            {archivedCampaignOverviews.length > 0 ? (
+              <>
+                <Text style={styles.collecteSectionTitle}>Archives</Text>
+                <View style={styles.campaignTimelineList}>
+                  {archivedCampaignOverviews.map((campaign) => {
+                    const site = referenceSites.find((entry) => Number(entry.id) === Number(campaign.site_id));
+                    const commune = referenceCommunes.find((entry) => Number(entry.id) === Number(site?.commune_id ?? 0));
+                    const territoire = referenceTerritoires.find((entry) => Number(entry.id) === Number(commune?.territoire_id ?? 0));
+                    const province = referenceProvinces.find((entry) => Number(entry.id) === Number(territoire?.province_id ?? commune?.province_id ?? 0));
+                    return (
+                      <View key={`archive-${campaign.id}`} style={[styles.campaignTimelineItem, styles.campaignArchivedCard]}>
+                        <Text style={styles.campaignTimelineType}>{campaign.period_mm_yyyy}</Text>
+                        <Text style={styles.campaignTimelineMetaText}>Province: {province?.name ?? site?.province ?? '-'}</Text>
+                        <Text style={styles.campaignTimelineMetaText}>Territoire: {territoire?.name ?? site?.territoire ?? '-'}</Text>
+                        <Text style={styles.campaignTimelineMetaText}>Commune: {commune?.name ?? site?.zone_sante ?? '-'}</Text>
+                        <Text style={styles.campaignTimelineMetaText}>Site: {campaign.site_label}</Text>
+                        <Text style={styles.campaignTimelineDate}>{campaign.total_forms} formulaire(s) archivé(s)</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </>
+            ) : null}
             <View style={styles.inlineActions}>
               <TouchableOpacity
                 style={styles.secondaryActionButton}
@@ -4119,14 +4801,14 @@ export default function App() {
                     ? 'Brouillons formulaires'
                     : collecteListMode === 'pending'
                     ? 'Formulaires prêt à envoyer'
-                    : 'Formulaires synchronisés'}
+                    : 'Données synchronisées - Cartographie des services'}
                 </Text>
                 <Text style={styles.campaignDetailsHint}>
                   {collecteListMode === 'draft'
                     ? 'Liste des formulaires service enregistrés en brouillon.'
                     : collecteListMode === 'pending'
                     ? 'Liste des formulaires service enregistrés et en attente de synchronisation.'
-                    : 'Liste des formulaires service déjà synchronisés.'}
+                    : 'Liste des collectes de cartographie des services déjà transmises au serveur.'}
                 </Text>
                 <View style={styles.campaignTimelineList}>
                   {filteredServiceCollecteForms.length === 0 ? (
@@ -4142,19 +4824,7 @@ export default function App() {
                   ) : (
                     filteredServiceCollecteForms.map((item) => (
                       (() => {
-                        const provinceId = Number(item.payload?.province_id ?? 0);
-                        const territoireId = Number(item.payload?.territoire_id ?? 0);
-                        const communeId = Number(item.payload?.commune_id ?? 0);
-                        const resolvedSiteId = Number(item.payload?.site_id ?? item.site_id ?? 0);
-                        const provinceName = referenceProvinces.find((entry) => Number(entry.id) === provinceId)?.name ?? '-';
-                        const territoireName = referenceTerritoires.find((entry) => Number(entry.id) === territoireId)?.name ?? '-';
-                        const communeName = referenceCommunes.find((entry) => Number(entry.id) === communeId)?.name ?? '-';
-                        const site = referenceSites.find((entry) => Number(entry.id) === resolvedSiteId);
-                        const siteLabel = site
-                          ? `${String(site.nom ?? `Site ${resolvedSiteId}`)}${site.code_site ? ` (${site.code_site})` : ''}`
-                          : resolvedSiteId > 0
-                          ? `Site ${resolvedSiteId}`
-                          : '-';
+                        const location = resolveRecordLocation(item);
 
                         return (
                           <View key={item.id} style={styles.campaignTimelineItem}>
@@ -4190,12 +4860,15 @@ export default function App() {
                               </View>
                             </View>
                             <Text style={styles.campaignTimelineId}>{item.id}</Text>
-                            <Text style={styles.campaignTimelineMetaText}>Province: {provinceName}</Text>
-                            <Text style={styles.campaignTimelineMetaText}>Territoire: {territoireName}</Text>
-                            <Text style={styles.campaignTimelineMetaText}>Commune: {communeName}</Text>
-                            <Text style={styles.campaignTimelineMetaText}>Site: {siteLabel}</Text>
+                            <Text style={styles.campaignTimelineMetaText}>Province: {location.province}</Text>
+                            <Text style={styles.campaignTimelineMetaText}>Territoire: {location.territoire}</Text>
+                            <Text style={styles.campaignTimelineMetaText}>Commune: {location.commune}</Text>
+                            <Text style={styles.campaignTimelineMetaText}>Site: {location.siteLabel}</Text>
+                            <Text style={styles.campaignTimelineMetaText}>
+                              Période de collecte: {String(item.payload?.date_collecte ?? item.created_at ?? '').slice(0, 10) || '-'}
+                            </Text>
                             <Text style={styles.campaignTimelineDate}>
-                              {String(item.created_at || '').replace('T', ' ').slice(0, 16)}
+                              Enregistré le {String(item.created_at || '').replace('T', ' ').slice(0, 16)}
                             </Text>
                             <View style={styles.inlineActions}>
                               <TouchableOpacity style={styles.secondaryActionButton} onPress={() => openSavedForm(item)}>
@@ -4521,10 +5194,18 @@ export default function App() {
           </View>
         ) : (
           <View style={styles.inlineActions}>
-            <TouchableOpacity style={styles.secondaryActionButton} onPress={() => saveSectorDraft('draft')}>
+            <TouchableOpacity
+              style={[styles.secondaryActionButton, isSavingLocally && styles.disabledChip]}
+              disabled={isSavingLocally}
+              onPress={() => void saveSectorDraft('draft')}
+            >
               <Text style={styles.secondaryActionText}>Brouillon</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.primaryButton} onPress={() => saveSectorDraft('pending')}>
+            <TouchableOpacity
+              style={[styles.primaryButton, isSavingLocally && styles.disabledChip]}
+              disabled={isSavingLocally}
+              onPress={() => void saveSectorDraft('pending')}
+            >
               <Text style={styles.primaryButtonText}>Enregistrer</Text>
             </TouchableOpacity>
           </View>
@@ -4540,8 +5221,7 @@ export default function App() {
           <TouchableOpacity
             onPress={() => {
               if (geographyPanelMode === 'form') {
-                stopPolygonTracking();
-                setGeographyPanelMode('list');
+                exitGeographyForm();
                 return;
               }
               setActiveTab('dashboard');
@@ -4616,16 +5296,108 @@ export default function App() {
               ))}
             </View>
 
+            {geographyListMode !== 'all' ? (
+              <View style={styles.campaignDetailsCard}>
+                <Text style={styles.campaignDetailsTitle}>
+                  {geographyListMode === 'draft'
+                    ? 'Brouillons géographiques'
+                    : geographyListMode === 'pending'
+                    ? 'Collectes géographiques prêtes à envoyer'
+                    : 'Collectes géographiques synchronisées'}
+                </Text>
+                <View style={styles.campaignTimelineList}>
+                  {filteredGeographyForms.length === 0 ? (
+                    <View style={styles.emptyQuestionCard}>
+                      <Text style={styles.emptyQuestionText}>Aucune collecte géographique dans cette catégorie.</Text>
+                    </View>
+                  ) : (
+                    filteredGeographyForms.map((item) => {
+                      const location = resolveRecordLocation(item);
+                      return (
+                        <View key={item.id} style={styles.campaignTimelineItem}>
+                          <View style={styles.campaignTimelineHeader}>
+                            <Text style={styles.campaignTimelineType}>
+                              {item.payload?.geometry_type === 'point' ? 'Point GPS' : 'Polygone GPS'}
+                            </Text>
+                            <Text style={[
+                              styles.campaignTimelineStatus,
+                              item.status === 'synced' && styles.campaignTimelineStatusSynced,
+                            ]}>
+                              {item.status === 'draft' ? 'Brouillon' : item.status === 'pending' ? 'Prêt à envoyer' : 'Synchronisé'}
+                            </Text>
+                          </View>
+                          <Text style={styles.campaignTimelineMetaText}>Province: {location.province}</Text>
+                          <Text style={styles.campaignTimelineMetaText}>Territoire: {location.territoire}</Text>
+                          <Text style={styles.campaignTimelineMetaText}>Commune: {location.commune}</Text>
+                          <Text style={styles.campaignTimelineMetaText}>Site: {location.siteLabel}</Text>
+                          <Text style={styles.campaignTimelineDate}>
+                            {String(item.payload?.date_collecte ?? item.created_at ?? '').slice(0, 10)}
+                          </Text>
+                          {item.status === 'draft' ? (
+                            <View style={styles.inlineActions}>
+                              <TouchableOpacity style={styles.secondaryActionButton} onPress={() => loadGeographyForEditing(item)}>
+                                <Text style={styles.secondaryActionText}>Éditer</Text>
+                              </TouchableOpacity>
+                            </View>
+                          ) : null}
+                        </View>
+                      );
+                    })
+                  )}
+                </View>
+              </View>
+            ) : null}
+
           </View>
         ) : (
           <>
-            {renderSiteCascade()}
+            {siteSelectionMode !== 'new' || newSiteGeographyStep === 'population' ? (
+              renderSiteCascade()
+            ) : (
+              <View style={styles.campaignDetailsCard}>
+                <Text style={styles.campaignDetailsTitle}>Étape 2/2 — Contour du site</Text>
+                <Text style={styles.campaignDetailsHint}>
+                  {newSiteData.nom} · {newSiteData.menages} ménages · {newSiteData.individus} individus
+                </Text>
+                <TouchableOpacity
+                  style={styles.secondaryActionButton}
+                  onPress={() => {
+                    stopPolygonTracking();
+                    setNewSiteGeographyStep('population');
+                  }}
+                >
+                  <Text style={styles.secondaryActionText}>← Modifier la population</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             <View style={styles.inlineActions}>
               <TouchableOpacity style={styles.secondaryActionButton} onPress={() => void syncSiteReferences()}>
                 <Text style={styles.secondaryActionText}>Synchroniser sites + cartographie</Text>
               </TouchableOpacity>
             </View>
 
+            {siteSelectionMode === 'new' && newSiteGeographyStep === 'population' ? (
+              <View style={styles.campaignDetailsCard}>
+                <Text style={styles.campaignDetailsTitle}>Étape 1/2 — Informations et population</Text>
+                <Text style={styles.campaignDetailsHint}>
+                  Vérifiez les données du nouveau site puis passez à la prise du polygone.
+                </Text>
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={() => {
+                    if (!validateNewSitePopulation()) {
+                      return;
+                    }
+                    setGeometryType('polygon');
+                    setGpsPolygonCategory('contour_site');
+                    setNewSiteGeographyStep('polygon');
+                  }}
+                >
+                  <Text style={styles.primaryButtonText}>Suivant : prendre le polygone →</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
             {siteSelectionMode === 'new' ? (
               <>
                 <Text style={styles.fieldLabel}>Mode</Text>
@@ -4720,41 +5492,15 @@ export default function App() {
               </>
             )}
 
-            <MapView
-              style={styles.mapPreview}
+            <LeafletMap
               region={mapRegion}
+              existingPoint={existingSitePoint}
+              existingPolygon={existingSitePolygonPoints}
+              point={point}
+              pointCategory={gpsPointCategory}
+              polygon={polygonPoints}
               onPress={addSelectedMapPoint}
-            >
-              {existingSitePolygonPoints.length > 1 ? (
-                <Polyline coordinates={existingSitePolygonPoints} strokeColor="#64748b" strokeWidth={2} />
-              ) : null}
-              {existingSitePolygonPoints.length > 2 ? (
-                <Polygon
-                  coordinates={existingSitePolygonPoints}
-                  strokeColor="#64748b"
-                  fillColor="rgba(100,116,139,0.18)"
-                  strokeWidth={2}
-                />
-              ) : null}
-              {existingSitePoint ? (
-                <Marker
-                  coordinate={existingSitePoint}
-                  pinColor="#64748b"
-                  title="Cartographie existante"
-                />
-              ) : null}
-              {point ? <Marker coordinate={point} /> : null}
-              {polygonPoints.map((coordinate, index) => (
-                <Marker
-                  key={`poly-pt-${index}`}
-                  coordinate={coordinate}
-                  pinColor="#2A87C8"
-                  title={`Borne ${index + 1}`}
-                />
-              ))}
-              {polygonPoints.length > 1 ? <Polyline coordinates={polygonPoints} strokeColor="#2A87C8" strokeWidth={2} /> : null}
-              {polygonPoints.length > 2 ? <Polygon coordinates={polygonPoints} strokeColor="#2A87C8" fillColor="rgba(42,135,200,0.15)" strokeWidth={2} /> : null}
-            </MapView>
+            />
             {siteSelectionMode === 'existing' && (existingSitePoint || existingSitePolygonPoints.length > 0) ? (
               <Text style={styles.campaignCardHint}>
                 Cartographie existante chargée sur mobile (mode hors ligne): {existingSitePolygonPoints.length > 0 ? `${existingSitePolygonPoints.length} bornes` : 'point GPS'}.
@@ -4800,30 +5546,53 @@ export default function App() {
                   <Text style={styles.secondaryActionText}>Position actuelle</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={styles.secondaryActionButton} onPress={addPointFromLocation}>
+              <TouchableOpacity style={styles.secondaryActionButton} onPress={() => void refreshPointFromLocation()}>
                 <Text style={styles.secondaryActionText}>{isPolygonMode ? 'Ajouter borne' : 'Actualiser point'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.secondaryActionButton, isCalibratingGps && styles.disabledChip]}
+                disabled={isCalibratingGps}
+                onPress={() => void calibrateGpsAccuracy()}
+              >
+                <Text style={styles.secondaryActionText}>
+                  {isCalibratingGps ? 'Étalonnage…' : 'Étalonner GPS'}
+                </Text>
               </TouchableOpacity>
               {isPolygonMode ? (
                 <TouchableOpacity style={styles.secondaryActionButton} onPress={removeLastPolygonBorne}>
                   <Text style={styles.secondaryActionText}>Retirer borne</Text>
                 </TouchableOpacity>
               ) : null}
-              <TouchableOpacity style={styles.secondaryActionButton} onPress={clearPolygon}>
+              <TouchableOpacity style={styles.secondaryActionButton} onPress={clearSelectedGeometry}>
                 <Text style={styles.secondaryActionText}>{isPolygonMode ? 'Effacer bornes' : 'Effacer'}</Text>
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.fieldLabel}>Précision (m)</Text>
-            <TextInput style={styles.input} value={errorMargin} onChangeText={setErrorMargin} keyboardType="numeric" placeholder="10" placeholderTextColor="#94a3b8" />
+            <Text style={styles.fieldLabel}>Précision GPS mesurée</Text>
+            <Text style={styles.campaignCardHint}>
+              {String(errorMargin).trim() === ''
+                ? `Non étalonnée — maximum autorisé : ${GPS_ACCURACY_LIMIT_METERS} m`
+                : `${errorMargin} m — ${Number(errorMargin) <= GPS_ACCURACY_LIMIT_METERS ? 'précision acceptable' : 'précision insuffisante'}`}
+            </Text>
 
             <View style={styles.inlineActions}>
-              <TouchableOpacity style={styles.secondaryActionButton} onPress={() => saveGeographyForm('draft')}>
+              <TouchableOpacity
+                style={[styles.secondaryActionButton, isSavingLocally && styles.disabledChip]}
+                disabled={isSavingLocally}
+                onPress={() => void saveGeographyForm('draft')}
+              >
                 <Text style={styles.secondaryActionText}>Brouillon</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.primaryButton} onPress={() => saveGeographyForm('pending')}>
+              <TouchableOpacity
+                style={[styles.primaryButton, isSavingLocally && styles.disabledChip]}
+                disabled={isSavingLocally}
+                onPress={() => void saveGeographyForm('pending')}
+              >
                 <Text style={styles.primaryButtonText}>Enregistrer</Text>
               </TouchableOpacity>
             </View>
+              </>
+            )}
           </>
         )}
       </View>
@@ -4840,7 +5609,7 @@ export default function App() {
           </View>
         ) : (
           filteredMovementForms.map((item) => {
-            const site = referenceSites.find((entry) => Number(entry.id) === Number(item.site_id));
+            const location = resolveRecordLocation(item);
             const typeLabel = MOVEMENT_TYPE_OPTIONS.find(
               (option) => option.value === item.payload?.type_mouvement,
             )?.label ?? 'Mouvement';
@@ -4864,9 +5633,10 @@ export default function App() {
                       : 'Prêt à envoyer'}
                   </Text>
                 </View>
-                <Text style={styles.campaignTimelineMetaText}>
-                  Site: {site ? `${site.nom ?? `Site ${site.id}`}${site.code_site ? ` (${site.code_site})` : ''}` : `Site ${item.site_id}`}
-                </Text>
+                <Text style={styles.campaignTimelineMetaText}>Province: {location.province}</Text>
+                <Text style={styles.campaignTimelineMetaText}>Territoire: {location.territoire}</Text>
+                <Text style={styles.campaignTimelineMetaText}>Commune: {location.commune}</Text>
+                <Text style={styles.campaignTimelineMetaText}>Site: {location.siteLabel}</Text>
                 <Text style={styles.campaignTimelineMetaText}>Ménages: {Math.abs(Number(item.payload?.menages ?? 0))}</Text>
                 <Text style={styles.campaignTimelineMetaText}>Individus: {Math.abs(Number(item.payload?.individus ?? 0))}</Text>
                 <Text style={styles.campaignTimelineDate}>
@@ -5166,10 +5936,18 @@ export default function App() {
             />
 
             <View style={styles.inlineActions}>
-              <TouchableOpacity style={styles.secondaryActionButton} onPress={() => saveMovementForm('draft')}>
+              <TouchableOpacity
+                style={[styles.secondaryActionButton, isSavingLocally && styles.disabledChip]}
+                disabled={isSavingLocally}
+                onPress={() => void saveMovementForm('draft')}
+              >
                 <Text style={styles.secondaryActionText}>Brouillon</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.primaryButton} onPress={() => saveMovementForm('pending')}>
+              <TouchableOpacity
+                style={[styles.primaryButton, isSavingLocally && styles.disabledChip]}
+                disabled={isSavingLocally}
+                onPress={() => void saveMovementForm('pending')}
+              >
                 <Text style={styles.primaryButtonText}>Enregistrer</Text>
               </TouchableOpacity>
             </View>
@@ -5218,7 +5996,11 @@ export default function App() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.primaryButton} onPress={() => void saveOssatDraft()}>
+        <TouchableOpacity
+          style={[styles.primaryButton, isSavingLocally && styles.disabledChip]}
+          disabled={isSavingLocally}
+          onPress={() => void saveOssatDraft()}
+        >
           <Text style={styles.primaryButtonText}>Enregistrer OSSAT</Text>
         </TouchableOpacity>
       </View>
@@ -5296,7 +6078,7 @@ export default function App() {
 
             {readyForms.map(({ record, conformity }) => {
               const selected = Boolean(selectedReadyFormIds[record.id]);
-              const site = referenceSites.find((entry) => Number(entry.id) === Number(record.site_id));
+              const location = resolveRecordLocation(record);
               const movementType = record.payload?.type_mouvement as MovementType | undefined;
               const movementLabel = movementType
                 ? MOVEMENT_TYPE_OPTIONS.find((option) => option.value === movementType)?.label
@@ -5326,9 +6108,10 @@ export default function App() {
                       {conformity.valid ? 'Conforme' : 'À corriger'}
                     </Text>
                   </View>
-                  <Text style={styles.campaignTimelineMetaText}>
-                    Site: {site ? `${site.nom ?? `Site ${site.id}`}${site.code_site ? ` (${site.code_site})` : ''}` : `Site ${record.site_id || 'non renseigné'}`}
-                  </Text>
+                  <Text style={styles.campaignTimelineMetaText}>Province: {location.province}</Text>
+                  <Text style={styles.campaignTimelineMetaText}>Territoire: {location.territoire}</Text>
+                  <Text style={styles.campaignTimelineMetaText}>Commune: {location.commune}</Text>
+                  <Text style={styles.campaignTimelineMetaText}>Site: {location.siteLabel}</Text>
                   {record.type === 'movement' ? (
                     <>
                       <Text style={styles.campaignTimelineMetaText}>Type: {movementLabel ?? movementType}</Text>

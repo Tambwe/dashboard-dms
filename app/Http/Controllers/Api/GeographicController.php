@@ -7,16 +7,22 @@ use App\Models\Province;
 use App\Models\Territoire;
 use App\Models\Commune;
 use App\Models\Site;
+use App\Models\SiteGeography;
 use App\Models\Coordinateur;
 use App\Models\Gestionnaire;
 use App\Models\CategorieSite;
 use App\Services\SitePopulationService;
+use App\Services\GeoJsonService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 
 class GeographicController extends Controller
 {
+    public function __construct(private readonly GeoJsonService $geoJsonService)
+    {
+    }
+
     /**
      * Récupère toutes les provinces
      */
@@ -331,7 +337,7 @@ class GeographicController extends Controller
         }
 
         $selectColumns = ['id'];
-        foreach (['nom', 'code_site', 'latitude', 'longitude', 'province', 'territoire', 'zone_sante'] as $column) {
+        foreach (['nom', 'code_site', 'latitude', 'longitude', 'province', 'territoire', 'zone_sante', 'geojson_data', 'geometry_type'] as $column) {
             if (Schema::hasColumn('sites', $column)) {
                 $selectColumns[] = $column;
             }
@@ -364,6 +370,52 @@ class GeographicController extends Controller
         }
 
         $sites = $sites->get();
+
+        $geographiesBySite = collect();
+        if (Schema::hasTable('site_geographies') && $sites->isNotEmpty()) {
+            $geographiesBySite = SiteGeography::query()
+                ->whereIn('site_id', $sites->pluck('id'))
+                ->whereNotNull('geojson_data')
+                ->orderBy('collected_at')
+                ->orderBy('id')
+                ->get([
+                    'id',
+                    'site_id',
+                    'geometry_type',
+                    'point_category',
+                    'point_category_other',
+                    'polygon_category',
+                    'polygon_block_name',
+                    'geojson_data',
+                    'collected_at',
+                ])
+                ->groupBy('site_id');
+        }
+
+        $sites->each(function (Site $site) use ($geographiesBySite): void {
+            $collectedLayers = ($geographiesBySite->get($site->id) ?? collect())
+                ->map(fn (SiteGeography $geography): array => [
+                    'id' => $geography->id,
+                    'name' => $this->geographyLayerName($geography),
+                    'geometry_type' => $geography->geometry_type,
+                    'point_category' => $geography->point_category,
+                    'point_icon' => $this->geographyPointIcon($geography->point_category),
+                    'polygon_category' => $geography->polygon_category,
+                    'collected_at' => $geography->collected_at?->toIso8601String(),
+                    'geojson' => $this->geoJsonService->normalize($geography->geojson_data),
+                ])
+                ->values();
+
+            if ($collectedLayers->isEmpty()) {
+                $collectedLayers = collect($this->normalizeStoredSiteLayers($site->geojson_data));
+            }
+
+            $site->setAttribute('collected_layers', $collectedLayers->all());
+            $site->setAttribute('geojson_data', $collectedLayers->isEmpty()
+                ? null
+                : ['layers' => $collectedLayers->all()]);
+        });
+
         app(SitePopulationService::class)->applyToSites(
             $sites,
             $selectedPeriod?->copy()->endOfMonth()
@@ -380,5 +432,92 @@ class GeographicController extends Controller
             'fallback_note' => $fallbackNote,
             'used_fallback' => $usedFallback,
         ]);
+    }
+
+    private function geographyLayerName(SiteGeography $geography): string
+    {
+        if ($geography->geometry_type === 'point') {
+            if ($geography->point_category === 'autre' && filled($geography->point_category_other)) {
+                return (string) $geography->point_category_other;
+            }
+
+            return match ($geography->point_category) {
+                'robinet' => 'Robinet',
+                'douche' => 'Douche',
+                'toilette' => 'Toilette',
+                'abris' => 'Abris',
+                'point_eau' => 'Point d’eau',
+                'centre_sante' => 'Centre de santé',
+                'ecole' => 'École',
+                'universite' => 'Université',
+                'marche' => 'Marché',
+                'hopital' => 'Hôpital',
+                'lavage_main' => 'Lavage des mains',
+                default => 'Point collecté',
+            };
+        }
+
+        if ($geography->polygon_category === 'bloc') {
+            return filled($geography->polygon_block_name)
+                ? 'Bloc - '.$geography->polygon_block_name
+                : 'Bloc du site';
+        }
+
+        return $geography->polygon_category === 'contour_site'
+            ? 'Contour du site'
+            : 'Polygone collecté';
+    }
+
+    private function geographyPointIcon(?string $category): string
+    {
+        return match ($category) {
+            'robinet' => '🚰',
+            'douche' => '🚿',
+            'toilette' => '🚻',
+            'abris' => '🏠',
+            'point_eau' => '💧',
+            'centre_sante' => '⚕️',
+            'ecole' => '🏫',
+            'universite' => '🎓',
+            'marche' => '🛒',
+            'hopital' => '🏥',
+            'lavage_main' => '🧼',
+            default => '📍',
+        };
+    }
+
+    private function normalizeStoredSiteLayers(mixed $geojson): array
+    {
+        if (! is_array($geojson)) {
+            return [];
+        }
+
+        if (isset($geojson['layers']) && is_array($geojson['layers'])) {
+            return collect($geojson['layers'])
+                ->filter(fn (mixed $layer): bool => is_array($layer) && is_array($layer['geojson'] ?? $layer['data'] ?? null))
+                ->map(function (array $layer): array {
+                    $layer['geojson'] = $this->geoJsonService->normalize($layer['geojson'] ?? $layer['data']);
+                    unset($layer['data']);
+
+                    return $layer;
+                })
+                ->values()
+                ->all();
+        }
+
+        if (isset($geojson['type'])) {
+            return [[
+                'id' => 'site-geojson',
+                'name' => 'Couche du site',
+                'geometry_type' => null,
+                'point_category' => null,
+                'point_icon' => '📍',
+                'polygon_category' => null,
+                'collected_at' => null,
+                'geojson' => $this->geoJsonService->normalize($geojson),
+            ]];
+        }
+
+        return [];
     }
 }

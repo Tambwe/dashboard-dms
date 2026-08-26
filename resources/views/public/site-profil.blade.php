@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Profil de Site OSSAT – DMS CCCM</title>
+    <title>Profil des services du site – DMS CCCM</title>
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=inter:400,500,600,700&display=swap" rel="stylesheet" />
     <x-vite-manifest-loader :assets="['resources/css/app.css', 'resources/js/app.js']" />
@@ -36,17 +36,18 @@
 <nav class="fixed top-0 left-0 right-0 z-50 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-b border-gray-200 dark:border-gray-700">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center h-16">
-            <a href="{{ url('/dashboard') }}" class="flex items-center space-x-3">
+            <a href="{{ route('home') }}" class="flex items-center space-x-3">
                 <img src="{{ asset('images/logo-dms-cccm.avif') }}" alt="Logo DMS CCCM" class="h-10 w-auto">
                 <div>
                     <span class="text-lg font-bold text-gray-900 dark:text-white">DMS CCCM</span>
                 </div>
             </a>
             <div class="hidden md:flex items-center space-x-6">
-                <a href="{{ url('/dashboard') }}" class="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-primary-600">Accueil</a>
+                <a href="{{ route('home') }}" class="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-primary-600">Accueil</a>
                 <a href="{{ url('/about') }}" class="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-primary-600">A propos</a>
                 <a href="{{ url('/profil-site') }}" class="text-sm font-medium text-primary-600 dark:text-primary-400 border-b-2 border-primary-600">Profil des sites</a>
-                <a href="{{ url('/dashboard') }}" class="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-primary-600">Tableau de bord</a>
+                <a href="{{ url('/cartographie') }}" class="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-primary-600">Cartographie</a>
+                <a href="{{ route('dashboard') }}" class="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-primary-600">Tableau de bord</a>
             </div>
             <div class="flex items-center space-x-3">
                 <button id="btn-print-profile" type="button" class="px-3 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm" title="Imprimer le profil du site">
@@ -70,7 +71,7 @@
         {{-- ══════════ SÉLECTEUR ══════════ --}}
         <div id="site-selector-card" class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 mb-8">
             <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Profil des sites d'accueil</h1>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mb-5">Sélectionnez un site pour consulter son état des lieux (OSSAT)</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-5">Sélectionnez un site pour consulter les données collectées sur ses services</p>
 
             <form method="GET" action="#" id="site-selector-form" class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
                 {{-- Province --}}
@@ -153,11 +154,6 @@
                             🏕️ {{ $site->typeSite->name }}
                         </span>
                         @endif
-                        @if($site->individus)
-                        <span class="inline-flex items-center gap-1 bg-white/20 px-2.5 py-0.5 rounded-full">
-                            👥 {{ number_format($site->individus) }} pers.
-                        </span>
-                        @endif
                         @if($site->organisation)
                         <span class="inline-flex items-center gap-1 bg-white/20 px-2.5 py-0.5 rounded-full">
                             🏢 {{ $site->organisation->name }}
@@ -186,6 +182,9 @@
         </div>
         @endif
 
+        @include('public.partials.service-profile')
+
+        @if(false)
         @if(!$ossatReport)
         {{-- ══════════ PAS DE RAPPORT ══════════ --}}
         <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-10 text-center">
@@ -933,10 +932,53 @@
         </div>
 
         @endif {{-- end ossatReport --}}
+        @endif {{-- disabled legacy OSSAT profile --}}
         @endif {{-- end isset($site) --}}
 
     </div>
 </main>
+
+<script>
+document.querySelectorAll('[data-question-settings-toggle]').forEach((button) => {
+    button.addEventListener('click', () => {
+        document.getElementById('question-preferences-form')?.classList.toggle('hidden');
+    });
+});
+
+document.querySelectorAll('[data-hide-question]').forEach((button) => {
+    button.addEventListener('click', () => {
+        const form = document.getElementById('question-preferences-form');
+        const key = button.dataset.hideQuestion;
+        const checkbox = form?.querySelector(`[data-question-key="${CSS.escape(key)}"]`);
+        if (checkbox) {
+            checkbox.checked = false;
+            form.submit();
+        }
+    });
+});
+
+document.querySelector('[data-question-search]')?.addEventListener('input', (event) => {
+    const query = event.target.value.trim().toLocaleLowerCase();
+    document.querySelectorAll('[data-question-group]').forEach((group) => {
+        let visibleOptions = 0;
+        group.querySelectorAll('[data-question-option]').forEach((option) => {
+            const visible = option.textContent.toLocaleLowerCase().includes(query);
+            option.classList.toggle('hidden', !visible);
+            visibleOptions += visible ? 1 : 0;
+        });
+        group.classList.toggle('hidden', visibleOptions === 0);
+    });
+});
+
+document.querySelectorAll('[data-select-questions]').forEach((button) => {
+    button.addEventListener('click', () => {
+        document.querySelectorAll('#question-preferences-form [data-question-key]').forEach((checkbox) => {
+            checkbox.checked = button.dataset.selectQuestions === 'all'
+                || (button.dataset.selectQuestions === 'recommended' && checkbox.dataset.defaultVisible === 'true');
+        });
+    });
+});
+</script>
 
 {{-- ══════════ FOOTER ══════════ --}}
 <footer class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 py-6">

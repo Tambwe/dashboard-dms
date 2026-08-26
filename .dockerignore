@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+!.env.example
+node_modules
+vendor
+mobile-app
+storage/logs/*
+storage/framework/*
+storage/app/public/*
+public/storage

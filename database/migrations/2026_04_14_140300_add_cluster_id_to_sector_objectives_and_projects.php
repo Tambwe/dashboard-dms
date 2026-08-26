@@ -8,25 +8,26 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Un objectif sectoriel appartient désormais à un seul cluster
-        Schema::table('program_sector_objectives', function (Blueprint $table) {
-            $table->unsignedBigInteger('cluster_id')->nullable()->after('id');
-            $table->foreign('cluster_id', 'pso_cluster_fk')
-                ->references('id')
-                ->on('clusters')
-                ->nullOnDelete();
-        });
+        if (! Schema::hasColumn('program_sector_objectives', 'cluster_id')) {
+            Schema::table('program_sector_objectives', function (Blueprint $table) {
+                $table->unsignedBigInteger('cluster_id')->nullable()->after('id');
+                $table->foreign('cluster_id', 'pso_cluster_fk')
+                    ->references('id')
+                    ->on('clusters')
+                    ->nullOnDelete();
+            });
+        }
 
-        // Un projet est rattaché à un seul cluster
-        Schema::table('projects', function (Blueprint $table) {
-            $table->unsignedBigInteger('cluster_id')->nullable()->after('organisation_id');
-            $table->foreign('cluster_id', 'project_cluster_fk')
-                ->references('id')
-                ->on('clusters')
-                ->nullOnDelete();
-        });
+        if (! Schema::hasColumn('projects', 'cluster_id')) {
+            Schema::table('projects', function (Blueprint $table) {
+                $table->unsignedBigInteger('cluster_id')->nullable()->after('organisation_id');
+                $table->foreign('cluster_id', 'project_cluster_fk')
+                    ->references('id')
+                    ->on('clusters')
+                    ->nullOnDelete();
+            });
+        }
 
-        // La table pivot cluster_program_sector_objective n'est plus nécessaire
         Schema::dropIfExists('cluster_program_sector_objective');
     }
 

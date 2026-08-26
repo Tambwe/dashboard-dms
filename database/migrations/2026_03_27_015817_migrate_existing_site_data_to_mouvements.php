@@ -12,6 +12,15 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (
+            ! Schema::hasTable('sites')
+            || ! Schema::hasTable('site_mouvements_population')
+            || ! Schema::hasColumn('sites', 'menages')
+            || ! Schema::hasColumn('sites', 'individus')
+        ) {
+            return;
+        }
+
         // Copier les données démographiques existantes de chaque site 
         // vers la table site_mouvements_population comme recensement initial
         DB::statement("

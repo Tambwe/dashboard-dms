@@ -11,7 +11,7 @@
     $populationActive = request()->routeIs('admin.mouvements.*', 'households.*');
     $programmeActive = request()->routeIs('admin.programme.*', 'project-activities-import.*', 'organisation.dashboard', 'organisation.projects.*');
     $ossatActive = request()->routeIs('ossat.*', 'admin.ossat-choix.*');
-    $administrationActive = request()->routeIs('admin.users.*', 'admin.organisations.*', 'admin.user-site-access.*', 'mobile.synced-data*');
+    $administrationActive = request()->routeIs('admin.users.*', 'admin.organisations.*', 'admin.user-site-access.*', 'admin.mobile-notifications.*', 'mobile.synced-data*');
     $helpActive = request()->routeIs('help.manual') || request()->is('about');
 @endphp
 
@@ -19,9 +19,15 @@
     Tableau de bord
 </x-sidebar-link>
 
+@auth
+    <x-sidebar-link :href="route('mobile.apk.download')" :active="false" class="py-3 font-medium text-gray-700 dark:text-gray-300">
+        📱 Télécharger l'application
+    </x-sidebar-link>
+@endauth
+
 <x-sidebar-group title="Sites & Cartographie" icon="📍" :active="$sitesActive">
     <x-sidebar-link :href="url('/cartographie')" :active="request()->is('cartographie', 'cartographie-mapbox')">
-        Cartographie des sites
+        Cartographie
     </x-sidebar-link>
     <x-sidebar-link :href="url('/profil-site')" :active="request()->is('profil-site', 'profil-site/*')">
         Profil des sites
@@ -133,6 +139,9 @@
                 </x-sidebar-link>
                 <x-sidebar-link :href="route('mobile.synced-data')" :active="request()->routeIs('mobile.synced-data*')">
                     Données mobiles synchronisées
+                </x-sidebar-link>
+                <x-sidebar-link :href="route('admin.mobile-notifications.index')" :active="request()->routeIs('admin.mobile-notifications.*')">
+                    Notifications mobiles
                 </x-sidebar-link>
                 @if($isSuperAdmin)
                     <x-sidebar-link :href="route('admin.organisations.index')" :active="request()->routeIs('admin.organisations.*')">

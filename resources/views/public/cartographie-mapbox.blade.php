@@ -454,15 +454,14 @@
 </head>
 <body>
     <header id="topbar">
-        <a href="{{ url('/dashboard') }}" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;">
+        <a href="{{ route('home') }}" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;">
             <img src="{{ asset('images/logo-dms-cccm.avif') }}" alt="Logo" style="height:32px;width:auto">
             <span style="font-weight:700">DMS CCCM</span>
         </a>
         <nav style="display:flex;align-items:center;gap:1rem;">
             <a href="{{ url('/about') }}" style="font-size:0.85rem;color:#475569;text-decoration:none;">A propos</a>
             <a href="{{ url('/profil-site') }}" style="font-size:0.85rem;color:#475569;text-decoration:none;">Profil des sites</a>
-            <a href="{{ url('/cartographie') }}" style="font-size:0.85rem;color:#475569;text-decoration:none;">Cartographie Leaflet</a>
-            <a href="{{ url('/cartographie-mapbox') }}" style="font-size:0.85rem;color:#2563eb;text-decoration:none;font-weight:600;">Cartographie Mapbox</a>
+            <a href="{{ url('/cartographie') }}" style="font-size:0.85rem;color:#2563eb;text-decoration:none;font-weight:600;">Cartographie</a>
             <select id="printFormatMapbox" title="Format impression" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:0.72rem;font-weight:600;">
                 <option value="A1 landscape">A1 paysage</option>
                 <option value="A1 portrait">A1 portrait</option>
@@ -591,6 +590,11 @@
                 <label class="layer-item" style="display:none"><input type="checkbox" id="layerPolygonsSousGestion" checked> <span class="layer-dot" style="background:#2563eb"></span> Polygones sous gestion</label>
                 <label class="layer-item" style="display:none"><input type="checkbox" id="layerPolygonsHorsGestion" checked> <span class="layer-dot" style="background:#7c3aed"></span> Polygones hors gestion</label>
 
+                <div id="collectedLayersSection" class="admin-section" style="display:none">
+                    <div class="layer-title">Couches collectées</div>
+                    <div id="collectedLayerItems"></div>
+                </div>
+
                 <div class="admin-section">
                     <div class="layer-title">Limites administratives</div>
                     <label class="layer-item"><input type="checkbox" id="layerAdmin0"> <span class="layer-line" style="background:#1e293b"></span> Pays</label>
@@ -643,6 +647,10 @@
             var layerPolygonsPdiCheckbox = document.getElementById('layerPolygonsPdi');
             var layerPolygonsSousGestionCheckbox = document.getElementById('layerPolygonsSousGestion');
             var layerPolygonsHorsGestionCheckbox = document.getElementById('layerPolygonsHorsGestion');
+            var collectedLayersSection = document.getElementById('collectedLayersSection');
+            var collectedLayerItems = document.getElementById('collectedLayerItems');
+            var disabledCollectedLayers = {};
+            var selectedLayerSiteId = null;
 
             var polygonCategoryLayers = {
                 pdi: { fill: 'site-polygons-pdi-fill', line: 'site-polygons-pdi-line', value: 'PDIs EN COMMUNAUTÉS HÔTES' },
@@ -843,8 +851,139 @@
                 return null;
             }
 
+            function getCollectedLayers(site) {
+                if (site && Array.isArray(site.collected_layers)) {
+                    return site.collected_layers;
+                }
+
+                var geojson = parseGeojsonData(site && site.geojson_data);
+                if (geojson && Array.isArray(geojson.layers)) {
+                    return geojson.layers;
+                }
+
+                return geojson ? [{ id: 'site-geojson', name: 'Couche du site', geojson: geojson }] : [];
+            }
+
+            function pointCategoryIcon(category) {
+                return {
+                    robinet: '🚰',
+                    douche: '🚿',
+                    toilette: '🚻',
+                    abris: '🏠',
+                    point_eau: '💧',
+                    centre_sante: '⚕️',
+                    ecole: '🏫',
+                    universite: '🎓',
+                    marche: '🛒',
+                    hopital: '🏥',
+                    lavage_main: '🧼'
+                }[category] || '📍';
+            }
+
+            function geojsonFeatures(geojson) {
+                var parsed = parseGeojsonData(geojson);
+                if (!parsed) return [];
+                if (parsed.type === 'FeatureCollection' && Array.isArray(parsed.features)) return parsed.features;
+                if (parsed.type === 'Feature') return [parsed];
+                if (parsed.type && parsed.coordinates) {
+                    return [{ type: 'Feature', properties: {}, geometry: parsed }];
+                }
+                return [];
+            }
+
+            function collectedLayerKey(site, layer, index) {
+                return String(site.id) + ':' + String(layer.id || index);
+            }
+
+            function buildCollectedGeometryFeatures(sites) {
+                var features = [];
+                (Array.isArray(sites) ? sites : []).forEach(function(site) {
+                    getCollectedLayers(site).forEach(function(layer, index) {
+                        var layerKey = collectedLayerKey(site, layer, index);
+                        if (disabledCollectedLayers[layerKey]) return;
+
+                        geojsonFeatures(layer.geojson || layer.data).forEach(function(feature) {
+                            if (!feature || !feature.geometry) return;
+                            features.push({
+                                type: 'Feature',
+                                geometry: feature.geometry,
+                                properties: Object.assign({}, feature.properties || {}, {
+                                    layer_id: layerKey,
+                                    layer_name: layer.name || layer.label || ('Couche ' + (index + 1)),
+                                    point_category: layer.point_category || '',
+                                    point_icon: layer.point_icon || pointCategoryIcon(layer.point_category),
+                                    site_id: site.id,
+                                    site_name: site.nom || ''
+                                })
+                            });
+                        });
+                    });
+                });
+                return features;
+            }
+
+            function renderCollectedLayerControls(sites) {
+                collectedLayerItems.innerHTML = '';
+                var layerCount = 0;
+
+                (Array.isArray(sites) ? sites : []).forEach(function(site) {
+                    getCollectedLayers(site).forEach(function(layer, index) {
+                        var layerKey = collectedLayerKey(site, layer, index);
+                        var label = document.createElement('label');
+                        label.className = 'layer-item';
+
+                        var checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.checked = !disabledCollectedLayers[layerKey];
+                        checkbox.addEventListener('change', function() {
+                            if (checkbox.checked) delete disabledCollectedLayers[layerKey];
+                            else disabledCollectedLayers[layerKey] = true;
+                            updateSelectedCollectedLayers();
+                        });
+
+                        var dot = document.createElement('span');
+                        dot.className = 'layer-dot';
+                        dot.style.background = '#0ea5e9';
+
+                        label.appendChild(checkbox);
+                        label.appendChild(dot);
+                        label.appendChild(document.createTextNode(
+                            (site.nom || 'Site') + ' - ' + (layer.name || layer.label || ('Couche ' + (index + 1)))
+                        ));
+                        collectedLayerItems.appendChild(label);
+                        layerCount += 1;
+                    });
+                });
+
+                collectedLayersSection.style.display = layerCount > 0 ? 'block' : 'none';
+            }
+
+            function updateSelectedCollectedLayers() {
+                if (!sourceReady || !map.getSource('collected-geographies')) return;
+                var selectedSite = allSites.find(function(site) {
+                    return String(site.id) === String(selectedLayerSiteId);
+                });
+                map.getSource('collected-geographies').setData({
+                    type: 'FeatureCollection',
+                    features: selectedSite ? buildCollectedGeometryFeatures([selectedSite]) : []
+                });
+            }
+
+            function selectSiteLayers(site) {
+                selectedLayerSiteId = site ? site.id : null;
+                disabledCollectedLayers = {};
+                renderCollectedLayerControls(site ? [site] : []);
+                updateSelectedCollectedLayers();
+            }
+
             function extractPolygonGeometries(geojson) {
                 if (!geojson || typeof geojson !== 'object') return [];
+
+                if (Array.isArray(geojson.layers)) {
+                    return geojson.layers.flatMap(function(layer) {
+                        return extractPolygonGeometries(layer && (layer.geojson || layer.data));
+                    });
+                }
 
                 if (geojson.type === 'Polygon' || geojson.type === 'MultiPolygon') {
                     return [geojson];
@@ -1272,6 +1411,7 @@
                         if (activeSiteCard) activeSiteCard.classList.remove('active');
                         activeSiteCard = card;
                         activeSiteCard.classList.add('active');
+                        selectSiteLayers(site);
 
                         var polygonBounds = site ? getSitePolygonBounds(site) : null;
                         if (polygonBounds && !polygonBounds.isEmpty()) {
@@ -1308,6 +1448,7 @@
 
                 map.getSource('sites').setData(fc);
                 map.getSource('site-polygons').setData(polygonFc);
+                updateSelectedCollectedLayers();
                 map.getSource('focus-area').setData(focusFc);
 
                 if (filteredFeatures.length || polygonFeatures.length) {
@@ -1333,6 +1474,7 @@
 
                         populateZoneAndSiteOptions(sites);
                         allSites = sites;
+                        selectSiteLayers(null);
                         renderFeatures();
                     })
                     .catch(function(err) {
@@ -1612,6 +1754,11 @@
                     data: { type: 'FeatureCollection', features: [] }
                 });
 
+                map.addSource('collected-geographies', {
+                    type: 'geojson',
+                    data: { type: 'FeatureCollection', features: [] }
+                });
+
                 map.addSource('focus-area', {
                     type: 'geojson',
                     data: { type: 'FeatureCollection', features: [] }
@@ -1732,6 +1879,55 @@
                         'line-color': ['coalesce', ['get', 'line_color'], '#0f766e'],
                         'line-width': ['coalesce', ['get', 'line_width'], 2.2],
                         'line-opacity': 0.9
+                    }
+                });
+
+                map.addLayer({
+                    id: 'collected-geographies-fill',
+                    type: 'fill',
+                    source: 'collected-geographies',
+                    filter: ['in', ['geometry-type'], ['literal', ['Polygon', 'MultiPolygon']]],
+                    paint: {
+                        'fill-color': '#0ea5e9',
+                        'fill-opacity': 0.22
+                    }
+                });
+
+                map.addLayer({
+                    id: 'collected-geographies-line',
+                    type: 'line',
+                    source: 'collected-geographies',
+                    filter: ['in', ['geometry-type'], ['literal', ['Polygon', 'MultiPolygon', 'LineString', 'MultiLineString']]],
+                    paint: {
+                        'line-color': '#0369a1',
+                        'line-width': 2.5,
+                        'line-opacity': 0.95
+                    }
+                });
+
+                map.addLayer({
+                    id: 'collected-geographies-point',
+                    type: 'circle',
+                    source: 'collected-geographies',
+                    filter: ['in', ['geometry-type'], ['literal', ['Point', 'MultiPoint']]],
+                    paint: {
+                        'circle-radius': 13,
+                        'circle-color': '#ffffff',
+                        'circle-stroke-color': '#0c4a6e',
+                        'circle-stroke-width': 1.5
+                    }
+                });
+
+                map.addLayer({
+                    id: 'collected-geographies-point-icon',
+                    type: 'symbol',
+                    source: 'collected-geographies',
+                    filter: ['in', ['geometry-type'], ['literal', ['Point', 'MultiPoint']]],
+                    layout: {
+                        'text-field': ['coalesce', ['get', 'point_icon'], '📍'],
+                        'text-size': 19,
+                        'text-allow-overlap': true,
+                        'text-ignore-placement': true
                     }
                 });
 
@@ -1905,6 +2101,10 @@
                 });
 
                 map.on('click', 'unclustered-point', function(e) {
+                    var selectedSite = allSites.find(function(site) {
+                        return String(site.id) === String(e.features[0].properties.id);
+                    });
+                    selectSiteLayers(selectedSite || null);
                     popup
                         .setLngLat(e.features[0].geometry.coordinates)
                         .setHTML(makePopupHtml(e.features[0]))
