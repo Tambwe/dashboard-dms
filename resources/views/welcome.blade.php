@@ -71,10 +71,10 @@
                     Suivi des personnes déplacées internes
                 </p>
                 <p class="text-lg text-gray-600 dark:text-gray-400 mb-12 max-w-3xl mx-auto">
-                    Une plateforme conçue pour centraliser, structurer et visualiser les données relatives aux déplacés internes dans le cadre du CCCM, 
+                    Une plateforme conçue pour centraliser, structurer et visualiser les données relatives aux déplacés internes dans le cadre du CCCM,
                     afin de faciliter la coordination humanitaire en RDC.
                 </p>
-                
+
                 <div class="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-4">
                     <a href="{{ route('dashboard.public') }}" class="px-8 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-colors shadow-lg hover:shadow-xl">
                         Accéder au tableau de bord
@@ -97,7 +97,7 @@
                 <h2 class="text-3xl font-bold text-center text-gray-900 dark:text-white mb-12">
                     Fonctionnalités principales
                 </h2>
-                
+
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
                     <!-- Feature 1 -->
                     <div class="card p-8 text-center hover:shadow-lg transition-shadow">
@@ -147,7 +147,7 @@
                     <h2 class="text-3xl font-bold text-center text-white mb-12">
                         Impact de la coordination humanitaire
                     </h2>
-                    
+
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
                         <div>
                             <div class="text-5xl font-bold text-white mb-2">24/7</div>
@@ -171,11 +171,15 @@
                     En partenariat avec
                 </h2>
                 <div class="flex flex-wrap justify-center items-center gap-8">
-                    <span class="text-2xl font-bold text-gray-700 dark:text-gray-300">CCCM</span>
-                    <span class="text-gray-400">·</span>
-                    <span class="text-2xl font-bold text-gray-700 dark:text-gray-300">HCR</span>
-                    <span class="text-gray-400">·</span>
-                    <span class="text-2xl font-bold text-gray-700 dark:text-gray-300">WNH</span>
+                    <a href="https://www.cccmcluster.org/where-we-work/democratic-republic-congo" target="_blank" rel="noopener noreferrer" aria-label="Visiter le site du CCCM Cluster en RDC">
+                        <img src="{{ asset('images/CCCM.svg') }}" alt="CCCM" class="h-16 w-auto object-contain">
+                    </a>
+                    <a href="https://www.unhcr.org/fr/ou-nous-travaillons/pays/republique-democratique-du-congo" target="_blank" rel="noopener noreferrer" aria-label="Visiter le site du HCR en RDC">
+                        <img src="{{ asset('images/unhcr.svg') }}" alt="HCR" class="h-16 w-auto object-contain">
+                    </a>
+                    <a href="https://www.wnhelp.org/" target="_blank" rel="noopener noreferrer" aria-label="Visiter le site de WNH">
+                        <img src="{{ asset('images/wnh_logo.svg') }}" alt="WNH" class="h-16 w-auto object-contain">
+                    </a>
                 </div>
             </div>
         </div>
@@ -253,7 +257,7 @@
         function toggleDarkMode() {
             const html = document.documentElement;
             const isDark = html.classList.contains('dark');
-            
+
             if (isDark) {
                 html.classList.remove('dark');
                 localStorage.setItem('theme', 'light');
@@ -266,7 +270,7 @@
         // Check for saved theme preference or prefer-color-scheme
         const theme = localStorage.getItem('theme');
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        
+
         if (theme === 'dark' || (!theme && prefersDark)) {
             document.documentElement.classList.add('dark');
         }
