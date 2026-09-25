@@ -5,6 +5,7 @@
 node_modules
 vendor
 mobile-app
+dashboard-dms
 storage/logs/*
 storage/framework/*
 storage/app/public/*

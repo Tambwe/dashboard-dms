@@ -36,10 +36,14 @@ RUN apt-get update && apt-get install -y \
 COPY . .
 COPY --from=composer_build /app/vendor ./vendor
 COPY --from=node_build /app/public/build ./public/build
+COPY deploy/app-service-entrypoint.sh /usr/local/bin/app-service-entrypoint
 
-RUN mkdir -p storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs \
+RUN rm -f bootstrap/cache/*.php \
+    && mkdir -p storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs \
     && chown -R www-data:www-data storage bootstrap/cache \
-    && chmod -R 775 storage bootstrap/cache
+    && chmod -R 775 storage bootstrap/cache \
+    && sed -i 's/\r$//' /usr/local/bin/app-service-entrypoint \
+    && chmod +x /usr/local/bin/app-service-entrypoint
 
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 
@@ -48,4 +52,4 @@ RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-av
 
 EXPOSE 80
 
-CMD ["apache2-foreground"]
+CMD ["app-service-entrypoint"]
