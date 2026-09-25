@@ -24,7 +24,7 @@ import {
   Image,
 } from 'react-native';
 
-const DEFAULT_API_BASE = 'https://dashboard-dms.91-134-141-197.sslip.io';
+const DEFAULT_API_BASE = 'https://dashboard-dms.48-222-144-8.sslip.io';
 const db = SQLite.openDatabaseSync('dms_mobile.db');
 const DEVICE_UUID_STORAGE_KEY = 'dms_mobile_device_uuid';
 
