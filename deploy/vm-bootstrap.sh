@@ -22,6 +22,18 @@ wait_for_apt() {
   done
 }
 
+disable_stale_apt_proxy() {
+  unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+
+  if apt-config dump | grep -q '10\.7\.37\.44:3128'; then
+    echo "Disabling stale apt proxy 10.7.37.44:3128..."
+    cat > /etc/apt/apt.conf.d/99dashboard-dms-no-proxy <<'EOF'
+Acquire::http::Proxy "false";
+Acquire::https::Proxy "false";
+EOF
+  fi
+}
+
 set_env() {
   local key="$1"
   local value="$2"
@@ -48,6 +60,7 @@ ensure_secret() {
 }
 
 echo "== Installing prerequisites =="
+disable_stale_apt_proxy
 wait_for_apt
 apt-get update
 wait_for_apt
@@ -66,7 +79,11 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.
 wait_for_apt
 apt-get update
 wait_for_apt
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+if ! apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; then
+  echo "Official Docker packages are unavailable. Falling back to Ubuntu docker.io packages..."
+  wait_for_apt
+  apt-get install -y docker.io docker-compose-v2
+fi
 systemctl enable --now docker
 
 docker --version
